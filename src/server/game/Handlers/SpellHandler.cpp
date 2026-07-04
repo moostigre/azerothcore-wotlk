@@ -32,6 +32,8 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
+void ShartuulHandleDoomguardFelFlames(Unit* doomguard, Unit* target);
+
 void WorldSession::HandleClientCastFlags(WorldPacket& recvPacket, uint8 castFlags, SpellCastTargets& targets)
 {
     // some spell cast packet including more data (for projectiles?)
@@ -396,6 +398,9 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
         return;
     }
 
+    if (mover && mover->GetEntry() == 23113)
+        LOG_ERROR("scripts", "Shartuul Doomguard CastSpell: player={} mover={} spellId={} castFlags={}", _player->GetName(), mover->GetGUID().ToString(), spellId, castFlags);
+
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
 
     if (!spellInfo)
@@ -440,6 +445,47 @@ void WorldSession::HandleCastSpellOpcode(WorldPacket& recvPacket)
     SpellCastTargets targets;
     targets.Read(recvPacket, mover);
     HandleClientCastFlags(recvPacket, castFlags, targets);
+
+    if (mover->IsCreature() && mover->GetEntry() == 23113 && spellId == 40493)
+    {
+        Unit* unitTarget = targets.GetUnitTarget();
+        if (!unitTarget || unitTarget == mover)
+            unitTarget = _player->GetSelectedUnit();
+        if (!unitTarget || unitTarget == mover)
+            unitTarget = mover->GetVictim();
+
+        if (!unitTarget || !unitTarget->IsAlive())
+            return;
+
+        Creature* creatureMover = mover->ToCreature();
+        creatureMover->AI()->SetGUID(unitTarget->GetGUID(), 230551);
+        creatureMover->AI()->DoAction(230552);
+        creatureMover->AddSpellCooldown(spellId, 0, 15000);
+
+        WorldPacket cooldownPacket;
+        creatureMover->BuildCooldownPacket(cooldownPacket, SPELL_COOLDOWN_FLAG_INCLUDE_GCD, spellId, 15000);
+        SendPacket(&cooldownPacket);
+        return;
+    }
+
+    if (mover->IsCreature() && mover->GetEntry() == 23113 && spellId == 40561)
+    {
+        LOG_INFO("scripts", "Shartuul Fel Flames CastSpell: player={} mover={} spellId={}", _player->GetName(), mover->GetGUID().ToString(), spellId);
+        Unit* unitTarget = targets.GetUnitTarget();
+        if (!unitTarget || unitTarget == mover)
+            unitTarget = _player->GetSelectedUnit();
+        if (!unitTarget || unitTarget == mover)
+            unitTarget = mover->GetVictim();
+
+        Creature* creatureMover = mover->ToCreature();
+        ShartuulHandleDoomguardFelFlames(creatureMover, unitTarget);
+        creatureMover->AddSpellCooldown(spellId, 0, 8000);
+
+        WorldPacket cooldownPacket;
+        creatureMover->BuildCooldownPacket(cooldownPacket, SPELL_COOLDOWN_FLAG_INCLUDE_GCD, spellId, 8000);
+        SendPacket(&cooldownPacket);
+        return;
+    }
 
     // not have spell in spellbook
     if (mover->IsPlayer())

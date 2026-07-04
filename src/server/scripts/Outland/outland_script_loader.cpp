@@ -112,6 +112,7 @@ void AddSC_boss_doomwalker();
 void AddSC_hellfire_peninsula();
 void AddSC_nagrand();
 void AddSC_netherstorm();
+void AddSC_shartuul_event();
 void AddSC_shadowmoon_valley();
 void AddSC_shattrath_city();
 void AddSC_terokkar_forest();
@@ -217,6 +218,7 @@ void AddOutlandScripts()
     AddSC_hellfire_peninsula();
     AddSC_nagrand();
     AddSC_netherstorm();
+    AddSC_shartuul_event();
     AddSC_shadowmoon_valley();
     AddSC_shattrath_city();
     AddSC_terokkar_forest();

@@ -36,6 +36,8 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
+void ShartuulHandleDoomguardFelFlames(Unit* doomguard, Unit* target);
+
 void WorldSession::HandleDismissCritter(WorldPackets::Pet::DismissCritter& packet)
 {
     Unit* pet = ObjectAccessor::GetCreatureOrPetOrVehicle(*_player, packet.CritterGUID);
@@ -149,6 +151,9 @@ void WorldSession::HandlePetStopAttack(WorldPackets::Pet::PetStopAttack& packet)
 
 void WorldSession::HandlePetActionHelper(Unit* pet, ObjectGuid guid1, uint32 spellId, uint16 flag, ObjectGuid guid2)
 {
+    if (pet && pet->GetEntry() == 23113)
+        LOG_ERROR("scripts", "Shartuul Doomguard PetAction: player={} pet={} spellId={} flag={} targetGuid={}", _player->GetName(), pet->GetGUID().ToString(), spellId, uint32(flag), guid2.ToString());
+
     CharmInfo* charmInfo = pet->GetCharmInfo();
     if (!charmInfo)
     {
@@ -333,6 +338,65 @@ void WorldSession::HandlePetActionHelper(Unit* pet, ObjectGuid guid1, uint32 spe
                 if (!spellInfo)
                 {
                     LOG_ERROR("network.opcode", "WORLD: unknown PET spell id {}", spellId);
+                    return;
+                }
+
+                if (pet->GetEntry() == 23113 && spellId == 40493)
+                {
+                    unit_target = guid2 ? ObjectAccessor::GetUnit(*_player, guid2) : nullptr;
+                    if (unit_target == pet)
+                        unit_target = nullptr;
+                    if (!unit_target)
+                    {
+                        unit_target = _player->GetSelectedUnit();
+                        if (unit_target == pet)
+                            unit_target = nullptr;
+                    }
+                    if (!unit_target)
+                    {
+                        unit_target = pet->GetVictim();
+                        if (unit_target == pet)
+                            unit_target = nullptr;
+                    }
+
+                    if (!unit_target || !unit_target->IsAlive())
+                        return;
+
+                    pet->ToCreature()->AI()->SetGUID(unit_target->GetGUID(), 230551);
+                    pet->ToCreature()->AI()->DoAction(230552);
+                    pet->ToCreature()->AddSpellCooldown(spellId, 0, 15000);
+
+                    WorldPacket cooldownPacket;
+                    pet->BuildCooldownPacket(cooldownPacket, SPELL_COOLDOWN_FLAG_INCLUDE_GCD, spellId, 15000);
+                    SendPacket(&cooldownPacket);
+                    return;
+                }
+
+                if (pet->GetEntry() == 23113 && spellId == 40561)
+                {
+                    LOG_INFO("scripts", "Shartuul Fel Flames PetAction: player={} pet={} spellId={} targetGuid={}", _player->GetName(), pet->GetGUID().ToString(), spellId, guid2.ToString());
+                    unit_target = guid2 ? ObjectAccessor::GetUnit(*_player, guid2) : nullptr;
+                    if (unit_target == pet)
+                        unit_target = nullptr;
+                    if (!unit_target)
+                    {
+                        unit_target = _player->GetSelectedUnit();
+                        if (unit_target == pet)
+                            unit_target = nullptr;
+                    }
+                    if (!unit_target)
+                    {
+                        unit_target = pet->GetVictim();
+                        if (unit_target == pet)
+                            unit_target = nullptr;
+                    }
+
+                    ShartuulHandleDoomguardFelFlames(pet, unit_target);
+                    pet->ToCreature()->AddSpellCooldown(spellId, 0, 8000);
+
+                    WorldPacket cooldownPacket;
+                    pet->BuildCooldownPacket(cooldownPacket, SPELL_COOLDOWN_FLAG_INCLUDE_GCD, spellId, 8000);
+                    SendPacket(&cooldownPacket);
                     return;
                 }
 
@@ -1012,6 +1076,9 @@ void WorldSession::HandlePetCastSpellOpcode(WorldPacket& recvPacket)
         return;
     }
 
+    if (caster->GetEntry() == 23113)
+        LOG_ERROR("scripts", "Shartuul Doomguard PetCastSpell: player={} caster={} spellId={} castFlags={}", _player->GetName(), caster->GetGUID().ToString(), spellId, castFlags);
+
     SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
     if (!spellInfo)
     {
@@ -1026,6 +1093,25 @@ void WorldSession::HandlePetCastSpellOpcode(WorldPacket& recvPacket)
     SpellCastTargets targets;
     targets.Read(recvPacket, caster);
     HandleClientCastFlags(recvPacket, castFlags, targets);
+
+    if (caster->GetEntry() == 23113 && spellId == 40561)
+    {
+        Unit* unitTarget = targets.GetUnitTarget();
+        if (!unitTarget || unitTarget == caster)
+            unitTarget = _player->GetSelectedUnit();
+        if (!unitTarget || unitTarget == caster)
+            unitTarget = caster->GetVictim();
+
+        LOG_ERROR("scripts", "Shartuul Fel Flames PetCastSpell intercept: player={} caster={} target={}", _player->GetName(), caster->GetGUID().ToString(), unitTarget ? unitTarget->GetGUID().ToString() : "none");
+
+        ShartuulHandleDoomguardFelFlames(caster, unitTarget);
+        caster->ToCreature()->AddSpellCooldown(spellId, 0, 8000);
+
+        WorldPacket cooldownPacket;
+        caster->BuildCooldownPacket(cooldownPacket, SPELL_COOLDOWN_FLAG_INCLUDE_GCD, spellId, 8000);
+        SendPacket(&cooldownPacket);
+        return;
+    }
 
     bool SetFollow = caster->HasUnitState(UNIT_STATE_FOLLOW);
     caster->ClearUnitState(UNIT_STATE_FOLLOW);
