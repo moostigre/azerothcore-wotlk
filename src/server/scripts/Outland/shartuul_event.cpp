@@ -29,6 +29,7 @@
 #include "ReputationMgr.h"
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
+#include "ScriptDefines/UnitScript.h"
 #include "Spell.h"
 #include "SpellAuraEffects.h"
 #include "SpellInfo.h"
@@ -66,6 +67,7 @@ enum ShartuulTransporter
     NPC_EYE_OF_SHARTUUL                = 23228,
     NPC_DREADMAW                       = 23275,
     NPC_EREDAR_SHARTUUL                = 23230,
+    NPC_FEL_EYE_STALK                  = 23323,
     NPC_EYE_TENTACLE                   = 15726,
     NPC_AETHER_RAY                     = 22181,
     NPC_SHARTUUL_WAVE_FELHOUND         = 6010,
@@ -112,6 +114,11 @@ enum ShartuulTransporter
     SPELL_SHARTUUL_STUN_VISUAL         = 24394,
     SPELL_SHARTUUL_EYE_DARK_GLARE      = 42011,
     SPELL_SHARTUUL_EYE_DISRUPTION      = 37061,
+    SPELL_SHARTUUL_CTHUN_DARK_GLARE_VISUAL = 26029,
+    SPELL_SHARTUUL_EYE_DARK_GLARE_CHANNEL = 40842,
+    SPELL_SHARTUUL_EYE_DARK_GLARE_LAYER_1 = 76221,
+    SPELL_SHARTUUL_EYE_DARK_GLARE_LAYER_2 = 64042,
+    SPELL_VISUAL_SHARTUUL_DISRUPTION_TRAP = 30023,
     SPELL_SHARTUUL_SHADOW_RESONANCE    = 41048,
     SPELL_SHARTUUL_DREADMAW_GROWTH     = 24086,
     SPELL_SHARTUUL_EREDAR_INCINERATE   = 19396,
@@ -197,6 +204,8 @@ enum ShartuulTransporter
     EVENT_SHARTUUL_TEST_EYE_INTRO_YELL = 31,
     EVENT_SHARTUUL_TEST_EYE_INTRO_LAUGH = 32,
     EVENT_SHARTUUL_TEST_EYE_INTRO_EYE = 33,
+    EVENT_SHARTUUL_TEST_SNIFF_VISUALS = 34,
+    EVENT_SHARTUUL_TEST_EYE_VISUALS = 35,
     POINT_SHARTUUL_DOOMGUARD_SUPER_JUMP = 230550,
 
     SHARTUUL_CONTROLLER_SEARCH_RANGE   = 180,
@@ -243,10 +252,12 @@ static std::unordered_map<ObjectGuid, ShartuulPendingSuperJumpImpact> ShartuulPe
 static std::unordered_map<ObjectGuid, ShartuulPendingFelFlames> ShartuulPendingFelFlamesCasts;
 static std::unordered_set<ObjectGuid> ShartuulNativeSuperJumpCasters;
 static std::unordered_set<ObjectGuid> ShartuulFelFlamesVisualCasters;
+static std::unordered_set<ObjectGuid> ShartuulShivanScriptedVisualCasters;
 
 uint32 constexpr FactionShartuulIdle = 35;
 uint32 constexpr FactionShartuulControlled = 2237;
 uint32 constexpr FactionShartuulWaveDemon = 2238;
+uint32 constexpr FactionShartuulPhaseThreeHostile = 14;
 
 Position const ShartuulCenter = { 2693.44f, 7110.67f, 365.10f, 0.37965f };
 Position const ShartuulDegraderSpawn = { 2690.4033f, 7089.1978f, 364.6187f, -2.9844513f };
@@ -314,12 +325,12 @@ Position const ShartuulTestWaveSpawn[] =
 };
 Position const ShartuulTestPortalVisualSpawn[] =
 {
-    { 2658.00f, 7080.00f, 365.00f, 0.0f }, // 45994
-    { 2664.00f, 7080.00f, 365.00f, 0.0f }, // 45977
-    { 2670.00f, 7080.00f, 365.00f, 0.0f }, // 45978
-    { 2676.00f, 7080.00f, 365.00f, 0.0f }, // 45989
-    { 2682.00f, 7080.00f, 365.00f, 0.0f }, // 46178
-    { 2688.00f, 7080.00f, 365.00f, 0.0f }  // 46208
+    { 3994.94f, -3468.06f, 533.14f, 0.0f }, // 45994
+    { 4006.94f, -3468.06f, 533.14f, 0.0f }, // 45977
+    { 4018.94f, -3468.06f, 533.14f, 0.0f }, // 45978
+    { 4030.94f, -3468.06f, 533.14f, 0.0f }, // 45989
+    { 4042.94f, -3468.06f, 533.14f, 0.0f }, // 46178
+    { 4054.94f, -3468.06f, 533.14f, 0.0f }  // 46208
 };
 uint32 const ShartuulTestPortalVisualSpells[] =
 {
@@ -330,6 +341,212 @@ uint32 const ShartuulTestPortalVisualSpells[] =
     SPELL_SHARTUUL_MURU_TRANSFORM_MISSILE_A,
     SPELL_SHARTUUL_MURU_TRANSFORM_MISSILE_B
 };
+
+struct ShartuulSniffVisualTest
+{
+    uint32 SpellId;
+    bool Channel;
+};
+
+ShartuulSniffVisualTest const ShartuulSniffVisualTests[] =
+{
+    { 40146, true  }, // main event green lightning
+    { 40158, false }, // shell shield
+    { 41592, false },
+    { 40357, false },
+    { 39979, false },
+    { 41578, false },
+    { 40560, false },
+    { 41957, false },
+    { 41596, false },
+    { 41916, true  },
+    { 40262, false },
+    { 40563, false },
+    { 40562, false },
+    { 40737, false },
+    { 40220, false },
+    { 40071, true  },
+    { 40605, true  },
+    { 40646, true  },
+    { 40648, false },
+    { 42173, false },
+    { 40222, false },
+    { 40219, false },
+    { 40221, false },
+    { 40236, false },
+    { 40309, false },
+    { 40561, false },
+    { 40564, false },
+    { 40565, false },
+    { 40493, false },
+    { 40496, false },
+    { 40497, false },
+    { 40498, false },
+    { 41589, false },
+    { 41593, false },
+    { 41594, false },
+    { 41595, false },
+    { 41597, true  },
+    { 40736, false },
+    { 40741, false },
+    { 40826, false },
+    { 40842, false },
+    { 40821, false },
+    { 40824, false },
+    { 41936, false },
+    { 41938, false },
+    { 41939, false },
+    { 41940, false },
+    { 41953, false },
+    { 41958, false },
+    { 41959, false },
+    { 41960, false },
+    { 41961, false },
+    { 41962, false },
+    { 41964, false },
+    { 41965, false },
+    { 41992, false },
+    { 41993, false }
+};
+
+static Position GetShartuulSniffVisualTestCasterPosition(uint8 index)
+{
+    uint8 const column = index % 10;
+    uint8 const row = index / 10;
+    return { 3994.94f + float(column) * 11.0f, -3442.06f + float(row) * 9.0f, 533.20f, 0.0f };
+}
+
+static Position GetShartuulSniffVisualTestTargetPosition(uint8 index)
+{
+    Position pos = GetShartuulSniffVisualTestCasterPosition(index);
+    pos.m_positionX += 5.5f;
+    return pos;
+}
+
+struct ShartuulEyeVisualTest
+{
+    uint32 SpellId;
+    bool Channel;
+    bool SelfCast;
+    uint32 VisualKit;
+};
+
+ShartuulEyeVisualTest const ShartuulEyeBeamVisualTests[] =
+{
+    { SPELL_SHARTUUL_BOUNDARY_DRAIN_LIFE, true,  false, 0 }, // 689
+    { SPELL_SHARTUUL_BOUNDARY_TEST_40071, true,  false, 0 }, // 40071
+    { SPELL_SHARTUUL_GREEN_LIGHTNING, true,  false, 0 }, // 40057
+    { SPELL_SHARTUUL_GREEN_LIGHTNING_THIN, true,  false, 0 }, // 40146
+    { SPELL_SHARTUUL_CTHUN_DARK_GLARE_VISUAL, true, false, 0 }, // 26029
+    { SPELL_SHARTUUL_GENERIC_MIND_FLAY, true, false, 0 }, // 28310
+    { SPELL_SHARTUUL_DREADMAW_SUMMON_CHANNEL, true, false, 0 }, // 40646
+    { SPELL_SHARTUUL_LEGION_RING_CHANNEL, true, false, 0 }, // 40605
+    { SPELL_SHARTUUL_SHIVAN_SIPHON_LIFE, true, false, 0 }, // 41597
+    { 41916, true, false, 0 },
+    { 35469, true, false, 0 },
+    { 39308, true, false, 0 },
+    { 54442, true, false, 0 }, // Moragg: Ray of Suffering
+    { 54438, true, false, 0 }, // Moragg: Ray of Pain
+    { 56046, true, false, 0 }, // Malygos: Portal Beam
+    { 51024, true, false, 0 }, // Varos: Arcane Beam Visual
+    { 60342, true, false, 0 }, // Taldaram: Beam Visual
+    { 56150, true, false, 0 }, // Jedoga: Sacrifice Beam
+    { 56312, true, false, 0 }, // Jedoga: Beam Visual
+    { 69887, true, false, 0 }, // ICC: Web Beam
+    { 69986, true, false, 0 }, // ICC: Web Beam 2
+    { 72301, true, false, 0 }, // ICC: Blood Beam Visual
+    { 72302, true, false, 0 }, // ICC: Blood Beam Visual
+    { 72303, true, false, 0 }, // ICC: Blood Beam Visual
+    { 72304, true, false, 0 }, // ICC: Blood Beam Visual
+    { 43897, true, false, 0 }, // ICC Gunship: Shadow Channeling
+    { 71372, true, false, 0 }, // Lich King: Harvest Soul Visual
+    { 71510, true, false, 0 }, // Blood Queen: Blood Mirror Visual
+    { 26134, true, false, 0 }, // C'Thun: Green Beam
+    { 26639, true, false, 0 }, // AQ: Drain Mana Visual
+    { 33365, true, false, 0 }, // Solarian: True Beam
+    { 33495, true, false, 0 }, // Gruul: Tractor Beam
+    { 33514, true, false, 0 }, // Gruul: Tractor Beam
+    { 35869, true, false, 0 }, // Kael'thas: Nether Beam
+    { 36089, true, false, 0 }, // Kael'thas: Netherbeam
+    { 36090, true, false, 0 }, // Kael'thas: Netherbeam
+    { 36196, true, false, 0 }, // Kael'thas: Pure Nether Beam
+    { 36197, true, false, 0 }, // Kael'thas: Pure Nether Beam
+    { 36198, true, false, 0 }, // Kael'thas: Pure Nether Beam
+    { 36201, true, false, 0 }, // Kael'thas: Pure Nether Beam
+    { 36290, true, false, 0 }, // Kael'thas: Pure Nether Beam
+    { 36291, true, false, 0 }, // Kael'thas: Pure Nether Beam
+    { 38015, true, false, 0 }, // Hydross: Blue Beam
+    { 39140, true, false, 0 }, // Archimonde: Drain World Tree
+    { 39141, true, false, 0 }, // Archimonde: Drain World Tree
+    { 40401, true, false, 0 }, // Shade of Akama: Soul Channel
+    { 40447, true, false, 0 }, // Shade of Akama: Akama Soul Channel
+    { 40927, true, false, 0 }, // Shade of Akama: Soul Expel Channel
+    { 41303, true, false, 0 }, // Reliquary: Soul Drain
+    { 44294, true, false, 0 }, // Magisters' Terrace: Drain Life
+    { 44328, true, false, 0 }, // Magisters' Terrace: Energy Feedback Channel
+    { 45661, true, false, 0 }, // Sunwell: Encapsulate Channel
+    { 46410, true, false, 0 }, // Kil'jaeden: Anveena Energy Drain
+    { 48307, true, false, 0 }, // Ymiron: Channel To Spirit
+    { 48310, true, false, 0 }, // Transitus Shield Beam
+    { 48316, true, false, 0 }, // Ymiron: Channel To Ymiron
+    { 49544, true, false, 0 }, // Tharon'ja: Eye Beam
+    { 50988, true, false, 0 }, // Halls of Stone: Glare of the Tribunal
+    { 51001, true, false, 0 }, // Halls of Stone: Dark Matter Channel
+    { 52106, true, false, 0 }, // Violet Hold/Novos: Beam Channel
+    { 61942, true, false, 0 }, // Ulduar Assembly: Lightning Channel Pre
+    { 63297, true, false, 0 }, // Mimiron: Laser Barrage
+    { 63347, true, false, 0 }, // Kologarn: Focused Eyebeam
+    { 63676, true, false, 0 }, // Kologarn: Focused Eyebeam Left
+    { 63702, true, false, 0 }, // Kologarn: Focused Eyebeam Right
+    { 63886, true, false, 0 }, // Yogg-Saron: Death Ray Damage Visual
+    { 63893, true, false, 0 }, // Yogg-Saron: Death Ray Origin Visual
+    { 64042, true, false, 0 }, // Mimiron: Laser Barrage
+    { 69051, true, false, 0 }, // Devourer of Souls: Mirrored Soul
+    { 70821, true, false, 0 }, // Blood Queen: Blood Mirror Damage
+    { 70838, true, false, 0 }, // Blood Queen: Blood Mirror Dummy
+    { 76221, true, false, 0 }  // Ruby Sanctum: Barrier Channel
+};
+
+ShartuulEyeVisualTest const ShartuulEyeTrapVisualTests[] =
+{
+    { 710, false, true, 0 }, // Banish
+    { 12002, false, true, 0 }, // Plague Cloud
+    { 24779, false, true, 0 }, // Dream Fog
+    { 24781, false, true, 0 }, // Dream Fog
+    { 24956, false, true, 0 }, // Dream Fog
+    { 35880, false, true, 0 }, // Nether Vapor
+    { 35881, false, true, 0 }, // Nether Vapor
+    { 35469, false, true, 0 }, // Lightning Cloud Visual
+    { 39308, false, true, 0 }, // Hellfire Lightning Cloud Visual
+    { 63029, false, true, 0 }, // Ominous Cloud
+    { SPELL_SHARTUUL_EYE_DISRUPTION, false, true, SPELL_VISUAL_SHARTUUL_DISRUPTION_TRAP },
+    { SPELL_SHARTUUL_EYE_DISRUPTION, false, true, 0 },
+    { SPELL_SHARTUUL_SELF_VISUAL, false, true, 0 },
+    { SPELL_SHARTUUL_GREEN_LIGHTNING_THIN, false, true, 0 },
+    { SPELL_SHARTUUL_BOUNDARY_TEST_40071, false, true, 0 }
+};
+
+static Position GetShartuulEyeBeamTestCasterPosition(uint8 index)
+{
+    uint8 const row = index / 6;
+    uint8 const col = index % 6;
+    return { 3994.94f + float(col) * 22.0f, -3368.06f + float(row) * 10.0f, 533.80f, 0.0f };
+}
+
+static Position GetShartuulEyeBeamTestTargetPosition(uint8 index)
+{
+    Position pos = GetShartuulEyeBeamTestCasterPosition(index);
+    pos.m_positionX += 12.0f;
+    pos.m_orientation = 3.14f;
+    return pos;
+}
+
+static Position GetShartuulEyeTrapTestPosition(uint8 index)
+{
+    uint8 const row = index / 5;
+    uint8 const col = index % 5;
+    return { 3994.94f + float(col) * 11.0f, -3218.06f + float(row) * 11.0f, 533.20f, 0.0f };
+}
 Position const ShartuulDegraderPatrol[] =
 {
     { 2676.0222f, 7075.2988f, 364.6187f, -2.9844513f },
@@ -494,6 +711,19 @@ static bool IsShartuulWaveDemon(Unit* unit)
         || entry == NPC_EYE_TENTACLE;
 }
 
+static bool IsShartuulPhaseThreeCreature(Unit const* unit)
+{
+    if (!unit)
+        return false;
+
+    uint32 const entry = unit->GetEntry();
+    return entry == NPC_EYE_OF_SHARTUUL_TRANSFORM
+        || entry == NPC_EYE_OF_SHARTUUL
+        || entry == NPC_DREADMAW
+        || entry == NPC_EREDAR_SHARTUUL
+        || entry == NPC_EYE_TENTACLE;
+}
+
 static bool IsShartuulProtectedAmbient(Unit const* unit)
 {
     return unit && unit->GetEntry() == NPC_AETHER_RAY;
@@ -507,7 +737,10 @@ static void ApplySniffedPhaseThreeCreatureState(Creature* creature)
     creature->SetPhaseMask(PHASEMASK_NORMAL, true);
     creature->SetFaction(FactionShartuulWaveDemon);
     creature->SetRegeneratingHealth(false);
-    creature->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+    creature->SetImmuneToAll(false);
+    creature->SetImmuneToPC(false);
+    creature->SetImmuneToNPC(false);
+    creature->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED | UNIT_FLAG_STUNNED);
 
     switch (creature->GetEntry())
     {
@@ -519,6 +752,8 @@ static void ApplySniffedPhaseThreeCreatureState(Creature* creature)
             creature->SetDisableGravity(true);
             creature->SetHover(true);
             creature->SetUInt32Value(UNIT_NPC_EMOTESTATE, 1772);
+            creature->SetControlled(false, UNIT_STATE_ROOT);
+            creature->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED | UNIT_STATE_FLEEING | UNIT_STATE_CASTING | UNIT_STATE_EVADE);
             break;
         case NPC_DREADMAW:
             creature->SetDisplayId(MODEL_DREADMAW);
@@ -539,6 +774,20 @@ static void ApplySniffedPhaseThreeCreatureState(Creature* creature)
         default:
             break;
     }
+}
+
+static void MakeShartuulPhaseThreeCreatureAttackable(Creature* creature)
+{
+    if (!creature)
+        return;
+
+    creature->SetPhaseMask(PHASEMASK_NORMAL, true);
+    creature->SetFaction(FactionShartuulPhaseThreeHostile);
+    creature->SetImmuneToAll(false);
+    creature->SetImmuneToPC(false);
+    creature->SetImmuneToNPC(false);
+    creature->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED | UNIT_FLAG_STUNNED);
+    creature->ClearUnitState(UNIT_STATE_UNATTACKABLE | UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_CONFUSED | UNIT_STATE_FLEEING | UNIT_STATE_EVADE);
 }
 
 static bool IsPossessedShartuulControlledDemon(Unit const* unit)
@@ -894,6 +1143,37 @@ static void ApplyShartuulEventStun(Creature* creature, uint32 duration)
     creature->AI()->SetData(DATA_SHARTUUL_EVENT_STUN_TIMER, duration);
 }
 
+static void ApplyShartuulControlledDemonTrapStun(Creature* creature, uint32 duration)
+{
+    if (!creature || !creature->IsAlive() || !IsPossessedShartuulControlledDemon(creature))
+        return;
+
+    if (creature->HasAura(SPELL_SHARTUUL_STUN_VISUAL) || creature->HasUnitState(UNIT_STATE_STUNNED))
+        return;
+
+    creature->InterruptNonMeleeSpells(false);
+    creature->StopMoving();
+    creature->GetMotionMaster()->Clear();
+    creature->SetControlled(true, UNIT_STATE_ROOT);
+    creature->SetControlled(true, UNIT_STATE_STUNNED);
+    creature->SetUnitFlag(UNIT_FLAG_STUNNED);
+    creature->AddAura(SPELL_SHARTUUL_STUN_VISUAL, creature);
+    creature->CastSpell(creature, SPELL_SHARTUUL_GENERIC_STUN, true);
+
+    creature->m_Events.AddEventAtOffset([creature]
+    {
+        if (!creature || !creature->IsInWorld() || !creature->IsAlive())
+            return;
+
+        creature->SetControlled(false, UNIT_STATE_ROOT);
+        creature->SetControlled(false, UNIT_STATE_STUNNED);
+        creature->RemoveUnitFlag(UNIT_FLAG_STUNNED);
+        creature->ClearUnitState(UNIT_STATE_ROOT | UNIT_STATE_STUNNED);
+        creature->RemoveAurasDueToSpell(SPELL_SHARTUUL_STUN_VISUAL);
+        creature->RemoveAurasDueToSpell(SPELL_SHARTUUL_GENERIC_STUN);
+    }, Milliseconds(duration));
+}
+
 static void PrepareShartuulTestPossessDemon(Creature* creature)
 {
     if (!creature)
@@ -911,6 +1191,14 @@ static void PrepareShartuulTestPossessDemon(Creature* creature)
     creature->SetUnitFlag(UNIT_FLAG_IMMUNE_TO_NPC);
     creature->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
     creature->GetMotionMaster()->Clear();
+}
+
+static void MakeShartuulGateDebugCreatureGmOnly(Creature* creature)
+{
+    if (!creature)
+        return;
+
+    creature->SetVisible(false);
 }
 
 enum class ShartuulShivanAspect : uint8
@@ -1015,7 +1303,7 @@ static void PossessShartuulTestDemon(Player* player, Creature* creature)
     player->RemoveCharmAuras();
     creature->RemoveCharmAuras();
     creature->CombatStop(true);
-    creature->SetFaction(FactionShartuulControlled);
+    creature->SetFaction(creature->GetEntry() == NPC_SHARTUUL_SHIVAN_ASSASSIN ? player->GetFaction() : FactionShartuulControlled);
     creature->SetReactState(REACT_PASSIVE);
     creature->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE);
     player->CastSpell(creature, SPELL_POSSESS, true);
@@ -1156,7 +1444,10 @@ public:
         {
             if (apply)
             {
-                me->SetFaction(FactionShartuulControlled);
+                if (Player* player = ObjectAccessor::GetPlayer(*me, me->GetCharmerGUID()))
+                    me->SetFaction(player->GetFaction());
+                else
+                    me->SetFaction(FactionShartuulControlled);
                 me->SetReactState(REACT_PASSIVE);
                 return;
             }
@@ -1818,10 +2109,16 @@ public:
             PossessShartuulTestDemon(player, creature);
         else if (action == GOSSIP_ACTION_INFO_DEF + 2)
         {
+            Creature* shivan = creature;
+            if (Unit* charm = player->GetCharm())
+                if (charm->GetEntry() == NPC_SHARTUUL_SHIVAN_ASSASSIN)
+                    if (Creature* possessedShivan = charm->ToCreature())
+                        shivan = possessedShivan;
+
             if (Creature* controller = GetShartuulController(creature))
             {
                 controller->AI()->SetGUID(player->GetGUID(), DATA_SHARTUUL_PLAYER);
-                controller->AI()->SetGUID(creature->GetGUID(), DATA_SHARTUUL_DEGRADER);
+                controller->AI()->SetGUID(shivan->GetGUID(), DATA_SHARTUUL_DEGRADER);
                 controller->AI()->DoAction(ACTION_SHARTUUL_TEST_EYE_INTRO);
             }
         }
@@ -2232,26 +2529,56 @@ public:
 
         ObjectGuid disruptionZoneGuid;
         ObjectGuid pendingDisruptionZoneGuid;
+        ObjectGuid darkGlareChannelHelperGuid;
+        ObjectGuid darkGlareChannelHelperGuid2;
+        ObjectGuid disruptionCornerGuids[4];
+        std::vector<ObjectGuid> disruptionVisualGuids;
+        std::vector<ObjectGuid> disruptionCloudGuids;
         Position disruptionZonePosition;
+        Position darkGlareOriginPosition;
+        bool darkGlareOriginSet = false;
         uint32 disruptionZoneTimer = 0;
         uint32 disruptionPulseTimer = 0;
+        uint32 disruptionTrapStunCooldown = 0;
+        uint32 darkGlareVisualTimer = 0;
         uint8 eyeChainStep = 0;
         uint8 activeEyeCast = 0;
 
         void Reset() override
         {
             ShartuulPhaseThreeBossAI::Reset();
+            DespawnDisruptionVisuals();
+            if (Creature* helper = ObjectAccessor::GetCreature(*me, darkGlareChannelHelperGuid))
+                helper->DespawnOrUnsummon();
+            if (Creature* helper = ObjectAccessor::GetCreature(*me, darkGlareChannelHelperGuid2))
+                helper->DespawnOrUnsummon();
             ApplySniffedPhaseThreeCreatureState(me);
+            MakeShartuulPhaseThreeCreatureAttackable(me);
             me->SetReactState(REACT_PASSIVE);
             disruptionZoneGuid.Clear();
             pendingDisruptionZoneGuid.Clear();
+            darkGlareChannelHelperGuid.Clear();
+            darkGlareChannelHelperGuid2.Clear();
+            for (ObjectGuid& guid : disruptionCornerGuids)
+                guid.Clear();
+            disruptionVisualGuids.clear();
+            disruptionCloudGuids.clear();
             disruptionZoneTimer = 0;
             disruptionPulseTimer = 0;
+            disruptionTrapStunCooldown = 0;
+            darkGlareVisualTimer = 0;
+            darkGlareOriginSet = false;
             eyeChainStep = 0;
             activeEyeCast = 0;
-            me->SetSpeedRate(MOVE_WALK, 0.45f);
-            me->SetSpeedRate(MOVE_RUN, 0.45f);
-            me->SetSpeedRate(MOVE_FLIGHT, 0.45f);
+            me->SetSpeedRate(MOVE_WALK, 0.8f);
+            me->SetSpeedRate(MOVE_RUN, 0.8f);
+            me->SetSpeedRate(MOVE_FLIGHT, 0.8f);
+        }
+
+        void EnterEvadeMode(EvadeReason why) override
+        {
+            DespawnDisruptionVisuals();
+            ShartuulPhaseThreeBossAI::EnterEvadeMode(why);
         }
 
         void ScheduleBossEvents() override
@@ -2296,12 +2623,16 @@ public:
             me->SetInCombatWith(target);
             target->SetInCombatWith(me);
             me->AddThreat(target, 100000.0f);
-            me->SetSpeedRate(MOVE_WALK, 0.45f);
-            me->SetSpeedRate(MOVE_RUN, 0.45f);
-            me->SetSpeedRate(MOVE_FLIGHT, 0.45f);
+            me->SetSpeedRate(MOVE_WALK, 0.8f);
+            me->SetSpeedRate(MOVE_RUN, 0.8f);
+            me->SetSpeedRate(MOVE_FLIGHT, 0.8f);
 
             if (me->GetDistance(target) > 6.0f)
-                me->GetMotionMaster()->MoveChase(target, 4.5f);
+            {
+                Position chase = target->GetPosition();
+                chase.m_positionZ += 3.0f;
+                me->GetMotionMaster()->MovePoint(1, chase.GetPositionX(), chase.GetPositionY(), chase.GetPositionZ());
+            }
             else
             {
                 me->StopMoving();
@@ -2318,7 +2649,7 @@ public:
 
             Position pos = target->GetPosition();
             pos.m_positionZ = target->GetPositionZ();
-            Creature* zone = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, pos, TEMPSUMMON_TIMED_DESPAWN, despawnMs);
+            Creature* zone = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, pos, TEMPSUMMON_MANUAL_DESPAWN);
             if (!zone)
                 return nullptr;
 
@@ -2331,6 +2662,206 @@ public:
             return zone;
         }
 
+        void PrepareDisruptionVisualHelper(Creature* helper)
+        {
+            if (!helper)
+                return;
+
+            helper->SetDisplayId(MODEL_INVISIBLE);
+            helper->SetObjectScale(1.0f);
+            helper->SetPhaseMask(PHASEMASK_NORMAL, true);
+            helper->SetFaction(FactionShartuulWaveDemon);
+            helper->SetReactState(REACT_PASSIVE);
+            helper->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE);
+            helper->SetControlled(true, UNIT_STATE_ROOT);
+        }
+
+        void CastDisruptionTrapVisual(Creature* helper)
+        {
+            if (!helper || !helper->IsAlive())
+                return;
+
+            helper->CastSpell(helper, SPELL_SHARTUUL_BOUNDARY_TEST_40071, true);
+        }
+
+        void CastDisruptionBeamVisual(Creature* source, Creature* target)
+        {
+            if (!source || !target || !source->IsAlive() || !target->IsAlive())
+                return;
+
+            source->SetFacingToObject(target);
+            source->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
+            source->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_GREEN_LIGHTNING);
+        }
+
+        void RefreshDisruptionTrapBeams()
+        {
+            Creature* corner0 = ObjectAccessor::GetCreature(*me, disruptionCornerGuids[0]);
+            Creature* corner1 = ObjectAccessor::GetCreature(*me, disruptionCornerGuids[1]);
+            Creature* corner2 = ObjectAccessor::GetCreature(*me, disruptionCornerGuids[2]);
+            Creature* corner3 = ObjectAccessor::GetCreature(*me, disruptionCornerGuids[3]);
+            CastDisruptionBeamVisual(corner0, corner2);
+            CastDisruptionBeamVisual(corner2, corner0);
+            CastDisruptionBeamVisual(corner1, corner3);
+            CastDisruptionBeamVisual(corner3, corner1);
+        }
+
+        void DespawnDisruptionVisuals()
+        {
+            for (ObjectGuid const& guid : disruptionVisualGuids)
+                if (Creature* helper = ObjectAccessor::GetCreature(*me, guid))
+                    helper->DespawnOrUnsummon();
+
+            disruptionVisualGuids.clear();
+            disruptionCloudGuids.clear();
+            for (ObjectGuid& guid : disruptionCornerGuids)
+                guid.Clear();
+            if (Creature* zone = ObjectAccessor::GetCreature(*me, disruptionZoneGuid))
+                zone->DespawnOrUnsummon();
+            disruptionZoneGuid.Clear();
+            disruptionZoneTimer = 0;
+            disruptionPulseTimer = 0;
+            disruptionTrapStunCooldown = 0;
+        }
+
+        void SpawnDisruptionTrapRing(Creature* center, uint32 despawnMs)
+        {
+            if (!center)
+                return;
+
+            PrepareDisruptionVisualHelper(center);
+
+            float const cornerOffsets[4][2] =
+            {
+                { -4.0f, -4.0f },
+                {  4.0f, -4.0f },
+                {  4.0f,  4.0f },
+                { -4.0f,  4.0f }
+            };
+            float const cloudOffsets[4][2] =
+            {
+                {  0.22f,  0.22f },
+                {  0.22f, -0.22f },
+                { -0.22f,  0.22f },
+                { -0.22f, -0.22f }
+            };
+
+            for (uint8 corner = 0; corner < 4; ++corner)
+            {
+                Position pos = center->GetPosition();
+                pos.m_positionX += cornerOffsets[corner][0];
+                pos.m_positionY += cornerOffsets[corner][1];
+                pos.m_positionZ = center->GetPositionZ();
+
+                if (Creature* anchor = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, pos, TEMPSUMMON_MANUAL_DESPAWN))
+                {
+                    PrepareDisruptionVisualHelper(anchor);
+                    disruptionCornerGuids[corner] = anchor->GetGUID();
+                    disruptionVisualGuids.push_back(anchor->GetGUID());
+                }
+
+                for (uint8 cloud = 0; cloud < std::size(cloudOffsets); ++cloud)
+                {
+                    Position cloudPos = pos;
+                    cloudPos.m_positionX += cloudOffsets[cloud][0];
+                    cloudPos.m_positionY += cloudOffsets[cloud][1];
+                    if (Creature* pulse = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, cloudPos, TEMPSUMMON_MANUAL_DESPAWN))
+                    {
+                        PrepareDisruptionVisualHelper(pulse);
+                        CastDisruptionTrapVisual(pulse);
+                        disruptionCloudGuids.push_back(pulse->GetGUID());
+                        disruptionVisualGuids.push_back(pulse->GetGUID());
+                    }
+                }
+            }
+
+            RefreshDisruptionTrapBeams();
+        }
+
+        Creature* EnsureDarkGlareChannelHelper(Unit* target, ObjectGuid& helperGuid)
+        {
+            if (!target)
+                return nullptr;
+
+            if (Creature* helper = ObjectAccessor::GetCreature(*me, helperGuid))
+                if (helper->IsAlive())
+                    return helper;
+
+            Position pos = me->GetPosition();
+            pos.m_positionZ += 2.0f;
+            if (Creature* helper = me->SummonCreature(NPC_FEL_EYE_STALK, pos, TEMPSUMMON_TIMED_DESPAWN, 9000))
+            {
+                helperGuid = helper->GetGUID();
+                PrepareDisruptionVisualHelper(helper);
+                helper->SetObjectScale(3.0f);
+                return helper;
+            }
+
+            return nullptr;
+        }
+
+        void RefreshDarkGlareBeam(Unit* target, uint32 spellId)
+        {
+            Creature* endpoint = EnsureDarkGlareChannelHelper(target, darkGlareChannelHelperGuid2);
+            if (!endpoint)
+                return;
+
+            if (!darkGlareOriginSet)
+            {
+                darkGlareOriginPosition = me->GetPosition();
+                darkGlareOriginPosition.m_positionZ += 0.8f;
+                darkGlareOriginSet = true;
+            }
+
+            float const angle = darkGlareOriginPosition.GetAngle(target);
+            Position casterPos = darkGlareOriginPosition;
+
+            Position endpointPos = casterPos;
+            endpointPos.m_positionX = target->GetPositionX() + std::cos(angle) * 30.0f;
+            endpointPos.m_positionY = target->GetPositionY() + std::sin(angle) * 30.0f;
+            endpointPos.m_positionZ = casterPos.GetPositionZ();
+
+            endpoint->NearTeleportTo(endpointPos.GetPositionX(), endpointPos.GetPositionY(), endpointPos.GetPositionZ(), angle);
+
+            me->SetFacingToObject(endpoint);
+            endpoint->SetFacingToObject(me);
+            me->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, endpoint->GetGUID());
+            me->SetUInt32Value(UNIT_CHANNEL_SPELL, spellId);
+            me->CastSpell(endpoint, spellId, true);
+        }
+
+        void RefreshDarkGlareLayer(ObjectGuid& helperGuid, Unit* target, uint32 spellId, float zOffset, bool recast)
+        {
+            if (Creature* helper = EnsureDarkGlareChannelHelper(target, helperGuid))
+            {
+                Position pos = me->GetPosition();
+                pos.m_positionZ = target->GetPositionZ() + zOffset;
+                helper->NearTeleportTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), helper->GetAngle(target));
+                helper->SetFacingToObject(target);
+                helper->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
+                helper->SetUInt32Value(UNIT_CHANNEL_SPELL, spellId);
+                if (recast)
+                    helper->CastSpell(target, spellId, true);
+            }
+        }
+
+        void UpdateDarkGlareVisual(uint32 diff, Unit* target)
+        {
+            if (activeEyeCast != 3 || !target || !target->IsAlive())
+                return;
+
+            HoldCasterPosition(target);
+
+            if (darkGlareVisualTimer > diff)
+            {
+                darkGlareVisualTimer -= diff;
+                return;
+            }
+
+            darkGlareVisualTimer = 750;
+            RefreshDarkGlareBeam(target, SPELL_SHARTUUL_EYE_DARK_GLARE_LAYER_1);
+        }
+
         void StartEyeCast(Unit* target, uint8 castType, uint32 castBarSpell, uint32 durationMs, char const* warning = nullptr)
         {
             if (!target)
@@ -2339,6 +2870,7 @@ public:
             activeEyeCast = castType;
             delayedTargetGuid = target->GetGUID();
             pendingDisruptionZoneGuid.Clear();
+            darkGlareOriginSet = false;
             HoldCasterPosition(target);
             me->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
             SendShartuulCastBar(me, target, castBarSpell, durationMs);
@@ -2356,15 +2888,14 @@ public:
                     if (Creature* zone = CreateDisruptionGroundVisual(target, durationMs + 11000))
                     {
                         pendingDisruptionZoneGuid = zone->GetGUID();
-                        zone->CastSpell(zone, SPELL_SHARTUUL_EYE_DISRUPTION, true);
                         me->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, zone->GetGUID());
                         me->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_BOUNDARY_DRAIN_LIFE);
                     }
                     break;
                 case 3:
-                    me->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
-                    me->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_BOUNDARY_DRAIN_LIFE);
-                    me->CastSpell(target, SPELL_SHARTUUL_GENERIC_GLARE, true);
+                    me->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
+                    darkGlareVisualTimer = 0;
+                    UpdateDarkGlareVisual(0, target);
                     break;
                 default:
                     break;
@@ -2390,8 +2921,7 @@ public:
             {
                 disruptionZoneGuid = zone->GetGUID();
                 disruptionZonePosition = zone->GetPosition();
-                zone->CastSpell(zone, SPELL_SHARTUUL_GREEN_LIGHTNING_THIN, true);
-                zone->CastSpell(zone, SPELL_SHARTUUL_EYE_DISRUPTION, true);
+                SpawnDisruptionTrapRing(zone, 10000);
             }
             else
             {
@@ -2401,7 +2931,7 @@ public:
 
             pendingDisruptionZoneGuid.Clear();
 
-            disruptionZoneTimer = 10000;
+            disruptionZoneTimer = 1;
             disruptionPulseTimer = 500;
             if (Player* player = ObjectAccessor::GetPlayer(*me, target->GetCharmerGUID()))
                 player->GetSession()->SendAreaTriggerMessage("Disruption Ray destabilizes the ground. Move out!");
@@ -2412,17 +2942,9 @@ public:
             if (!disruptionZoneTimer)
                 return;
 
-            if (disruptionZoneTimer <= diff)
-            {
-                disruptionZoneTimer = 0;
-                disruptionPulseTimer = 0;
-                if (Creature* zone = ObjectAccessor::GetCreature(*me, disruptionZoneGuid))
-                    zone->DespawnOrUnsummon();
-                disruptionZoneGuid.Clear();
-                return;
-            }
+            if (disruptionTrapStunCooldown)
+                disruptionTrapStunCooldown = disruptionTrapStunCooldown > diff ? disruptionTrapStunCooldown - diff : 0;
 
-            disruptionZoneTimer -= diff;
             if (disruptionPulseTimer > diff)
             {
                 disruptionPulseTimer -= diff;
@@ -2430,17 +2952,40 @@ public:
             }
 
             disruptionPulseTimer = 1000;
-            Creature* zone = ObjectAccessor::GetCreature(*me, disruptionZoneGuid);
-            if (zone)
-                zone->CastSpell(zone, SPELL_SHARTUUL_GREEN_LIGHTNING_THIN, true);
+            for (ObjectGuid const& guid : disruptionCloudGuids)
+                if (Creature* helper = ObjectAccessor::GetCreature(*me, guid))
+                    CastDisruptionTrapVisual(helper);
+            RefreshDisruptionTrapBeams();
+            StunPossessedDemonsInDisruptionZone();
+        }
 
-            Unit* target = GetBossTarget();
-            if (!target || target->GetExactDist2d(disruptionZonePosition.GetPositionX(), disruptionZonePosition.GetPositionY()) > 5.0f)
+        void JustDied(Unit* /*killer*/) override
+        {
+            DespawnDisruptionVisuals();
+        }
+
+        void StunPossessedDemonsInDisruptionZone()
+        {
+            if (disruptionTrapStunCooldown)
                 return;
 
-            target->CastSpell(target, SPELL_SHARTUUL_GENERIC_STUN, true);
-            if (Creature* creature = target->ToCreature())
-                ApplyShartuulEventStun(creature, 2500);
+            std::list<Creature*> demons;
+            GetCreatureListWithEntryInGrid(demons, me, NPC_FELGUARD_DEGRADER, 140.0f);
+            GetCreatureListWithEntryInGrid(demons, me, NPC_DOOMGUARD_PUNISHER, 140.0f);
+            GetCreatureListWithEntryInGrid(demons, me, NPC_SHARTUUL_SHIVAN_ASSASSIN, 140.0f);
+
+            for (Creature* demon : demons)
+            {
+                if (!demon || !demon->IsAlive() || !IsPossessedShartuulControlledDemon(demon))
+                    continue;
+
+                if (demon->GetExactDist2d(disruptionZonePosition.GetPositionX(), disruptionZonePosition.GetPositionY()) > 7.0f)
+                    continue;
+
+                ApplyShartuulControlledDemonTrapStun(demon, 4000);
+                disruptionTrapStunCooldown = 8000;
+                break;
+            }
         }
 
         void UpdateAI(uint32 diff) override
@@ -2459,7 +3004,10 @@ public:
             }
 
             if (activeEyeCast)
+            {
                 HoldCasterPosition(target);
+                UpdateDarkGlareVisual(diff, target);
+            }
             else
                 MoveSlowlyTowardTarget(target);
 
@@ -2476,10 +3024,18 @@ public:
             Unit* target = ObjectAccessor::GetUnit(*me, delayedTargetGuid);
             uint8 castType = activeEyeCast;
             activeEyeCast = 0;
+            darkGlareVisualTimer = 0;
+            darkGlareOriginSet = false;
             delayedTargetGuid.Clear();
             me->ClearUnitState(UNIT_STATE_CASTING);
             me->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, ObjectGuid::Empty);
             me->SetUInt32Value(UNIT_CHANNEL_SPELL, 0);
+            if (Creature* helper = ObjectAccessor::GetCreature(*me, darkGlareChannelHelperGuid))
+                helper->DespawnOrUnsummon();
+            darkGlareChannelHelperGuid.Clear();
+            if (Creature* helper = ObjectAccessor::GetCreature(*me, darkGlareChannelHelperGuid2))
+                helper->DespawnOrUnsummon();
+            darkGlareChannelHelperGuid2.Clear();
 
             if (!target || !target->IsAlive())
                 return;
@@ -2500,7 +3056,8 @@ public:
                     me->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
                     if (GetShartuulShivanAspect(target) == ShartuulShivanAspect::Ice && IsShartuulShivanIceBlocked(target))
                     {
-                        target->CastSpell(me, SPELL_SHARTUUL_BOUNDARY_DRAIN_LIFE, true);
+                        target->SetFacingToObject(me);
+                        target->CastSpell(target, SPELL_SHARTUUL_CTHUN_DARK_GLARE_VISUAL, true);
                         Unit::DealDamage(target, me, 50000, nullptr, SPELL_DIRECT_DAMAGE, SPELL_SCHOOL_MASK_SHADOW);
                         if (Player* player = ObjectAccessor::GetPlayer(*me, target->GetCharmerGUID()))
                             player->GetSession()->SendAreaTriggerMessage("Ice Block reflects Dark Glare!");
@@ -2527,6 +3084,7 @@ public:
                         case 0:
                         case 2:
                         case 5:
+                        case 6:
                             StartEyeCast(target, 1, SPELL_SHARTUUL_FEL_CANNON_BOLT, 2500);
                             ++eyeChainStep;
                             bossEvents.ScheduleEvent(EVENT_SHARTUUL_EYE_CHAIN, 5s);
@@ -2582,7 +3140,8 @@ public:
                     {
                         if (GetShartuulShivanAspect(delayedTarget) == ShartuulShivanAspect::Ice && IsShartuulShivanIceBlocked(delayedTarget))
                         {
-                            delayedTarget->CastSpell(me, SPELL_SHARTUUL_EYE_DARK_GLARE, true);
+                            delayedTarget->SetFacingToObject(me);
+                            delayedTarget->CastSpell(delayedTarget, SPELL_SHARTUUL_CTHUN_DARK_GLARE_VISUAL, true);
                             Unit::DealDamage(delayedTarget, me, 50000, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_SHADOW);
                             if (Player* player = ObjectAccessor::GetPlayer(*me, delayedTarget->GetCharmerGUID()))
                                 player->GetSession()->SendAreaTriggerMessage("Ice Block reflects Dark Glare!");
@@ -2617,6 +3176,7 @@ public:
         {
             ShartuulPhaseThreeBossAI::Reset();
             ApplySniffedPhaseThreeCreatureState(me);
+            MakeShartuulPhaseThreeCreatureAttackable(me);
             me->SetObjectScale(1.0f);
         }
 
@@ -2713,6 +3273,7 @@ public:
         {
             ShartuulPhaseThreeBossAI::Reset();
             ApplySniffedPhaseThreeCreatureState(me);
+            MakeShartuulPhaseThreeCreatureAttackable(me);
         }
 
         void ScheduleBossEvents() override
@@ -2802,6 +3363,15 @@ public:
         ObjectGuid testPossessGuids[3];
         ObjectGuid testWaveGuids[9];
         ObjectGuid testPortalVisualGuids[std::size(ShartuulTestPortalVisualSpells)];
+        ObjectGuid testPortalVisualLabelGuids[std::size(ShartuulTestPortalVisualSpells)];
+        ObjectGuid testSniffVisualCasterGuids[std::size(ShartuulSniffVisualTests)];
+        ObjectGuid testSniffVisualTargetGuids[std::size(ShartuulSniffVisualTests)];
+        ObjectGuid testSniffVisualLabelGuids[std::size(ShartuulSniffVisualTests)];
+        ObjectGuid testEyeBeamCasterGuids[std::size(ShartuulEyeBeamVisualTests)];
+        ObjectGuid testEyeBeamTargetGuids[std::size(ShartuulEyeBeamVisualTests)];
+        ObjectGuid testEyeBeamLabelGuids[std::size(ShartuulEyeBeamVisualTests)];
+        ObjectGuid testEyeTrapGuids[std::size(ShartuulEyeTrapVisualTests)];
+        ObjectGuid testEyeTrapLabelGuids[std::size(ShartuulEyeTrapVisualTests)];
         std::vector<ObjectGuid> eventGameObjectGuids;
         std::vector<ObjectGuid> activeWaveGuids;
         bool eventActive;
@@ -2844,6 +3414,24 @@ public:
             for (ObjectGuid& guid : testWaveGuids)
                 guid.Clear();
             for (ObjectGuid& guid : testPortalVisualGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testPortalVisualLabelGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testSniffVisualCasterGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testSniffVisualTargetGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testSniffVisualLabelGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testEyeBeamCasterGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testEyeBeamTargetGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testEyeBeamLabelGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testEyeTrapGuids)
+                guid.Clear();
+            for (ObjectGuid& guid : testEyeTrapLabelGuids)
                 guid.Clear();
             eventActive = false;
             phaseOneStarted = false;
@@ -2956,6 +3544,16 @@ public:
             shieldRemainingPct = 100;
             doomguardFelFlamesTicks = 0;
 
+            if (me->GetMapId() == 1)
+            {
+                events.CancelEvent(EVENT_SHARTUUL_ARENA_VISUALS);
+                events.CancelEvent(EVENT_SHARTUUL_TEST_BOSS_ABILITIES);
+                SpawnPortalVisualTestHarness();
+                SpawnSniffVisualTestHarness();
+                SpawnEyeVisualTestHarness();
+                return;
+            }
+
             if (Creature* next = ObjectAccessor::GetCreature(*me, nextCaptiveDemonGuid))
                 next->DespawnOrUnsummon();
 
@@ -2973,10 +3571,15 @@ public:
 
             EnsureShieldHelpers();
             SpawnTestHarness(true);
-            SpawnPortalVisualTestHarness();
+            events.CancelEvent(EVENT_SHARTUUL_TEST_PORTAL_VISUALS);
+            events.CancelEvent(EVENT_SHARTUUL_TEST_SNIFF_VISUALS);
+            events.CancelEvent(EVENT_SHARTUUL_TEST_EYE_VISUALS);
             events.CancelEvent(EVENT_SHARTUUL_ARENA_VISUALS);
             events.ScheduleEvent(EVENT_SHARTUUL_ARENA_VISUALS, 1s);
             events.CancelEvent(EVENT_SHARTUUL_TEST_BOSS_ABILITIES);
+            SpawnPortalVisualTestHarness();
+            SpawnSniffVisualTestHarness();
+            SpawnEyeVisualTestHarness();
         }
 
         void PrepareTestWaveDemon(Creature* demon, float scale = 1.0f)
@@ -3062,6 +3665,43 @@ public:
             return nullptr;
         }
 
+        void PrepareVisualLabel(Creature* label, uint32 spellId)
+        {
+            if (!label)
+                return;
+
+            label->SetName("helper-ID" + std::to_string(spellId));
+            label->SetDisplayId(MODEL_INVISIBLE);
+            label->SetNativeDisplayId(MODEL_INVISIBLE);
+            label->SetObjectScale(0.1f);
+            label->SetPhaseMask(PHASEMASK_NORMAL, true);
+            label->SetReactState(REACT_PASSIVE);
+            label->SetFaction(FactionShartuulWaveDemon);
+            label->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC);
+            label->SetControlled(true, UNIT_STATE_ROOT);
+            label->Say("helper-ID" + std::to_string(spellId), LANG_UNIVERSAL);
+        }
+
+        void EnsureVisualLabel(ObjectGuid& guid, Position pos, uint32 spellId)
+        {
+            if (GetAliveManagedTestCreature(guid))
+                return;
+
+            pos.m_positionZ += 0.15f;
+            if (Creature* label = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, pos, TEMPSUMMON_MANUAL_DESPAWN))
+            {
+                guid = label->GetGUID();
+                PrepareVisualLabel(label, spellId);
+            }
+        }
+
+        void SayVisualLabel(ObjectGuid const& guid, uint32 spellId)
+        {
+            if (Creature* label = ObjectAccessor::GetCreature(*me, guid))
+                if (label->IsAlive())
+                    label->Say("helper-ID" + std::to_string(spellId), LANG_UNIVERSAL);
+        }
+
         void CleanupDuplicateTestCreatures(uint32 entry, ObjectGuid keepGuid, Position const& pos, float range)
         {
             std::list<Creature*> creatures;
@@ -3088,6 +3728,7 @@ public:
                 {
                     if (Creature* keep = GetAliveManagedTestCreature(testPossessGuids[i]))
                     {
+                        MakeShartuulGateDebugCreatureGmOnly(keep);
                         CleanupDuplicateTestCreatures(possessEntries[i], keep->GetGUID(), ShartuulTestPossessSpawn[i], 25.0f);
                         continue;
                     }
@@ -3096,6 +3737,7 @@ public:
                     {
                         testPossessGuids[i] = demon->GetGUID();
                         PrepareShartuulTestPossessDemon(demon);
+                        MakeShartuulGateDebugCreatureGmOnly(demon);
                     }
                 }
             }
@@ -3114,6 +3756,7 @@ public:
                 if (Creature* keep = GetAliveManagedTestCreature(testWaveGuids[i]))
                 {
                     PrepareTestWaveDemon(keep, waveEntries[i] == NPC_SHARTUUL_MOARG_TORMENTER ? 0.5f : 1.0f);
+                    MakeShartuulGateDebugCreatureGmOnly(keep);
                     CleanupDuplicateTestCreatures(waveEntries[i], keep->GetGUID(), ShartuulTestWaveSpawn[i], 40.0f);
                     continue;
                 }
@@ -3125,6 +3768,7 @@ public:
                 {
                     testWaveGuids[i] = wave->GetGUID();
                     PrepareTestWaveDemon(wave, waveEntries[i] == NPC_SHARTUUL_MOARG_TORMENTER ? 0.5f : 1.0f);
+                    MakeShartuulGateDebugCreatureGmOnly(wave);
                 }
             }
 
@@ -3144,6 +3788,7 @@ public:
                 if (keep->GetEntry() == entry)
                 {
                     PrepareTestWaveDemon(keep, scale);
+                    MakeShartuulGateDebugCreatureGmOnly(keep);
                     CleanupDuplicateTestCreatures(entry, keep->GetGUID(), pos, 60.0f);
                     return;
                 }
@@ -3157,7 +3802,122 @@ public:
             {
                 testWaveGuids[slot] = boss->GetGUID();
                 PrepareTestWaveDemon(boss, scale);
+                MakeShartuulGateDebugCreatureGmOnly(boss);
             }
+        }
+
+        void SpawnEyeVisualTestHarness()
+        {
+            if (eventActive)
+                return;
+
+            for (uint8 i = 0; i < std::size(ShartuulEyeBeamVisualTests); ++i)
+            {
+                if (!GetAliveManagedTestCreature(testEyeBeamCasterGuids[i]))
+                {
+                    if (Creature* caster = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, GetShartuulEyeBeamTestCasterPosition(i), TEMPSUMMON_MANUAL_DESPAWN))
+                    {
+                        testEyeBeamCasterGuids[i] = caster->GetGUID();
+                        PrepareVisualAnchor(caster);
+                    }
+                }
+
+                if (!GetAliveManagedTestCreature(testEyeBeamTargetGuids[i]))
+                {
+                    if (Creature* target = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, GetShartuulEyeBeamTestTargetPosition(i), TEMPSUMMON_MANUAL_DESPAWN))
+                    {
+                        testEyeBeamTargetGuids[i] = target->GetGUID();
+                        PrepareVisualAnchor(target);
+                    }
+                }
+
+                if (!GetAliveManagedTestCreature(testEyeBeamLabelGuids[i]))
+                {
+                    Position labelPos = GetShartuulEyeBeamTestCasterPosition(i);
+                    labelPos.m_positionX += 6.0f;
+                    labelPos.m_positionY -= 2.0f;
+                    labelPos.m_orientation = 0.0f;
+                    EnsureVisualLabel(testEyeBeamLabelGuids[i], labelPos, ShartuulEyeBeamVisualTests[i].SpellId);
+                }
+            }
+
+            for (uint8 i = 0; i < std::size(ShartuulEyeTrapVisualTests); ++i)
+            {
+                if (!GetAliveManagedTestCreature(testEyeTrapGuids[i]))
+                {
+                    if (Creature* trap = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, GetShartuulEyeTrapTestPosition(i), TEMPSUMMON_MANUAL_DESPAWN))
+                    {
+                        testEyeTrapGuids[i] = trap->GetGUID();
+                        PrepareVisualAnchor(trap);
+                    }
+                }
+
+                Position labelPos = GetShartuulEyeTrapTestPosition(i);
+                labelPos.m_positionY -= 2.5f;
+                EnsureVisualLabel(testEyeTrapLabelGuids[i], labelPos, ShartuulEyeTrapVisualTests[i].SpellId);
+            }
+
+            RefreshEyeVisualTestHarness();
+        }
+
+        void RefreshEyeVisualTestHarness()
+        {
+            if (eventActive)
+                return;
+
+            for (uint8 i = 0; i < std::size(ShartuulEyeBeamVisualTests); ++i)
+            {
+                Creature* caster = ObjectAccessor::GetCreature(*me, testEyeBeamCasterGuids[i]);
+                Creature* target = ObjectAccessor::GetCreature(*me, testEyeBeamTargetGuids[i]);
+                if (!caster || !target || !caster->IsAlive() || !target->IsAlive())
+                    continue;
+
+                ShartuulEyeVisualTest const& test = ShartuulEyeBeamVisualTests[i];
+                caster->SetFacingToObject(target);
+                target->SetFacingToObject(caster);
+
+                if (Creature* label = ObjectAccessor::GetCreature(*me, testEyeBeamLabelGuids[i]))
+                    if (label->IsAlive())
+                        label->Say("helper-ID" + std::to_string(test.SpellId), LANG_UNIVERSAL);
+
+                if (test.Channel)
+                {
+                    Unit* channelTarget = test.SelfCast ? caster : target;
+                    caster->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, channelTarget->GetGUID());
+                    caster->SetUInt32Value(UNIT_CHANNEL_SPELL, test.SpellId);
+                    caster->RemoveAurasDueToSpell(test.SpellId);
+
+                    // Dark Glare is useful as a maintained beam; recasting it makes the client show only a short pulse.
+                    if (test.SpellId != SPELL_SHARTUUL_CTHUN_DARK_GLARE_VISUAL)
+                        caster->CastSpell(channelTarget, test.SpellId, true);
+                }
+                else
+                {
+                    caster->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, ObjectGuid::Empty);
+                    caster->SetUInt32Value(UNIT_CHANNEL_SPELL, 0);
+                    caster->RemoveAurasDueToSpell(test.SpellId);
+                    caster->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
+                    caster->CastSpell(test.SelfCast ? caster : target, test.SpellId, true);
+                }
+            }
+
+            for (uint8 i = 0; i < std::size(ShartuulEyeTrapVisualTests); ++i)
+            {
+                Creature* trap = ObjectAccessor::GetCreature(*me, testEyeTrapGuids[i]);
+                if (!trap || !trap->IsAlive())
+                    continue;
+
+                ShartuulEyeVisualTest const& test = ShartuulEyeTrapVisualTests[i];
+                SayVisualLabel(testEyeTrapLabelGuids[i], test.SpellId);
+                if (test.VisualKit)
+                    trap->SendPlaySpellVisual(test.VisualKit);
+
+                trap->RemoveAurasDueToSpell(test.SpellId);
+                trap->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
+                trap->CastSpell(trap, test.SpellId, true);
+            }
+
+            events.ScheduleEvent(EVENT_SHARTUUL_TEST_EYE_VISUALS, 4s);
         }
 
         void SpawnPortalVisualTestHarness()
@@ -3172,6 +3932,10 @@ public:
                     testPortalVisualGuids[i] = visual->GetGUID();
                     PreparePortalVisualAnchor(visual);
                 }
+
+                Position labelPos = ShartuulTestPortalVisualSpawn[i];
+                labelPos.m_positionY -= 3.0f;
+                EnsureVisualLabel(testPortalVisualLabelGuids[i], labelPos, ShartuulTestPortalVisualSpells[i]);
             }
 
             RefreshPortalVisualTestHarness();
@@ -3185,10 +3949,84 @@ public:
                 if (!visual || !visual->IsAlive())
                     continue;
 
+                SayVisualLabel(testPortalVisualLabelGuids[i], ShartuulTestPortalVisualSpells[i]);
+                visual->RemoveAurasDueToSpell(ShartuulTestPortalVisualSpells[i]);
                 visual->CastSpell(visual, ShartuulTestPortalVisualSpells[i], true);
             }
 
-            events.ScheduleEvent(EVENT_SHARTUUL_TEST_PORTAL_VISUALS, 5s);
+            events.ScheduleEvent(EVENT_SHARTUUL_TEST_PORTAL_VISUALS, 4s);
+        }
+
+        void SpawnSniffVisualTestHarness()
+        {
+            for (uint8 i = 0; i < std::size(ShartuulSniffVisualTests); ++i)
+            {
+                Position const casterPos = GetShartuulSniffVisualTestCasterPosition(i);
+                Position const targetPos = GetShartuulSniffVisualTestTargetPosition(i);
+
+                if (!GetAliveManagedTestCreature(testSniffVisualCasterGuids[i]))
+                {
+                    if (Creature* caster = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, casterPos, TEMPSUMMON_MANUAL_DESPAWN))
+                    {
+                        testSniffVisualCasterGuids[i] = caster->GetGUID();
+                        PrepareVisualAnchor(caster);
+                        caster->SetObjectScale(0.4f);
+                    }
+                }
+
+                if (!GetAliveManagedTestCreature(testSniffVisualTargetGuids[i]))
+                {
+                    if (Creature* target = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, targetPos, TEMPSUMMON_MANUAL_DESPAWN))
+                    {
+                        testSniffVisualTargetGuids[i] = target->GetGUID();
+                        PrepareVisualAnchor(target);
+                        target->SetObjectScale(0.4f);
+                    }
+                }
+
+                Position labelPos = casterPos;
+                labelPos.m_positionX += 2.75f;
+                labelPos.m_positionY -= 2.0f;
+                EnsureVisualLabel(testSniffVisualLabelGuids[i], labelPos, ShartuulSniffVisualTests[i].SpellId);
+            }
+
+            RefreshSniffVisualTestHarness();
+        }
+
+        void RefreshSniffVisualTestHarness()
+        {
+            for (uint8 i = 0; i < std::size(ShartuulSniffVisualTests); ++i)
+            {
+                Creature* caster = ObjectAccessor::GetCreature(*me, testSniffVisualCasterGuids[i]);
+                Creature* target = ObjectAccessor::GetCreature(*me, testSniffVisualTargetGuids[i]);
+                if (!caster || !target || !caster->IsAlive() || !target->IsAlive())
+                    continue;
+
+                uint32 const spellId = ShartuulSniffVisualTests[i].SpellId;
+                SayVisualLabel(testSniffVisualLabelGuids[i], spellId);
+                caster->SetFacingToObject(target);
+                target->SetFacingToObject(caster);
+
+                if (ShartuulSniffVisualTests[i].Channel)
+                {
+                    caster->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
+                    caster->SetUInt32Value(UNIT_CHANNEL_SPELL, spellId);
+                    caster->RemoveAurasDueToSpell(spellId);
+                    caster->CastSpell(target, spellId, true);
+                }
+                else
+                {
+                    caster->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, ObjectGuid::Empty);
+                    caster->SetUInt32Value(UNIT_CHANNEL_SPELL, 0);
+                    caster->RemoveAurasDueToSpell(spellId);
+                    target->RemoveAurasDueToSpell(spellId);
+                    caster->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
+                    caster->CastSpell(target, spellId, true);
+                    target->CastSpell(target, spellId, true);
+                }
+            }
+
+            events.ScheduleEvent(EVENT_SHARTUUL_TEST_SNIFF_VISUALS, 4s);
         }
 
         void UpdateTestBossAbilities()
@@ -3775,15 +4613,16 @@ public:
             Position impact = targetPos;
             impact.m_positionZ += 0.75f;
 
-            Creature* source = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, crystal, TEMPSUMMON_TIMED_DESPAWN, 2000);
-            Creature* target = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, impact, TEMPSUMMON_TIMED_DESPAWN, 2000);
+            Creature* source = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, crystal, TEMPSUMMON_TIMED_DESPAWN, 2500);
+            Creature* target = me->SummonCreature(NPC_WORLD_EVENT_GENERATOR, impact, TEMPSUMMON_TIMED_DESPAWN, 2500);
             if (!source || !target)
                 return;
 
             PrepareVisualAnchor(source);
             PrepareVisualAnchor(target);
             source->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
-            source->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_GREEN_LIGHTNING);
+            source->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_BOUNDARY_TEST_40071);
+            source->CastSpell(target, SPELL_SHARTUUL_BOUNDARY_TEST_40071, true);
         }
 
         void SpawnGatePortalVisual(Position const& pos)
@@ -4643,15 +5482,15 @@ public:
 
             TrackWaveDemon(boss);
             boss->SetPhaseMask(PHASEMASK_NORMAL, true);
-            boss->SetFaction(FactionShartuulWaveDemon);
+            boss->SetFaction(FactionShartuulPhaseThreeHostile);
             boss->SetObjectScale(scale);
             boss->SetReactState(REACT_AGGRESSIVE);
             boss->SetRegeneratingHealth(false);
             ApplySniffedPhaseThreeCreatureState(boss);
+            MakeShartuulPhaseThreeCreatureAttackable(boss);
             boss->SetObjectScale(scale);
             boss->SetMaxHealth(health);
             boss->SetHealth(health);
-            boss->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE);
             bool const activateNow = boss->GetEntry() != NPC_EREDAR_SHARTUUL || phaseThreeBossStage != 3;
             if (activateNow)
             {
@@ -4662,6 +5501,7 @@ public:
 
             if (boss->GetEntry() == NPC_EYE_OF_SHARTUUL || boss->GetEntry() == NPC_EYE_OF_SHARTUUL_TRANSFORM)
             {
+                MakeShartuulPhaseThreeCreatureAttackable(boss);
                 boss->SetReactState(REACT_PASSIVE);
                 boss->AttackStop();
                 boss->GetMotionMaster()->Clear();
@@ -4712,6 +5552,17 @@ public:
         {
             Player* player = ObjectAccessor::GetPlayer(*me, playerGuid);
             Creature* shivan = ObjectAccessor::GetCreature(*me, degraderGuid);
+            if (player)
+            {
+                if (Unit* charm = player->GetCharm())
+                    if (charm->GetEntry() == NPC_SHARTUUL_SHIVAN_ASSASSIN)
+                        if (Creature* possessedShivan = charm->ToCreature())
+                        {
+                            shivan = possessedShivan;
+                            degraderGuid = shivan->GetGUID();
+                        }
+            }
+
             if (!player || !shivan || shivan->GetEntry() != NPC_SHARTUUL_SHIVAN_ASSASSIN)
                 return;
 
@@ -4733,11 +5584,14 @@ public:
             transferringDemonControl = true;
             phaseThreeBossStage = 1;
 
-            player->RemoveCharmAuras();
             PrepareShartuulTestPossessDemon(shivan);
-            shivan->SetFaction(FactionShartuulControlled);
+            shivan->SetFaction(player->GetFaction());
             player->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            player->CastSpell(shivan, SPELL_POSSESS, true);
+            if (!player->isPossessing(shivan))
+            {
+                player->RemoveCharmAuras();
+                player->CastSpell(shivan, SPELL_POSSESS, true);
+            }
             transferringDemonControl = false;
 
             events.CancelEvent(EVENT_SHARTUUL_PHASE_THREE_START);
@@ -4904,6 +5758,19 @@ public:
             if (boss)
             {
                 PreparePhaseThreeBoss(boss, shivan, health, scale);
+                if (entry == NPC_EYE_OF_SHARTUUL || entry == NPC_EYE_OF_SHARTUUL_TRANSFORM || entry == NPC_DREADMAW || entry == NPC_EREDAR_SHARTUUL)
+                {
+                    MakeShartuulPhaseThreeCreatureAttackable(boss);
+                    shivan->SetGuidValue(UNIT_FIELD_TARGET, boss->GetGUID());
+                    shivan->SetInCombatWith(boss);
+                    boss->SetInCombatWith(shivan);
+                    boss->AddThreat(shivan, 100000.0f);
+                    boss->AI()->SetGUID(shivan->GetGUID(), DATA_SHARTUUL_DEGRADER);
+                }
+
+                LOG_INFO("scripts", "Shartuul phase-three spawn: bossEntry={} bossFaction={} bossFlags={} shivanFaction={} shivanFlags={} shivanCanAttackBoss={} bossCanAttackShivan={}",
+                    boss->GetEntry(), boss->GetFaction(), boss->GetUnitFlags(), shivan->GetFaction(), shivan->GetUnitFlags(), shivan->IsValidAttackTarget(boss), boss->IsValidAttackTarget(shivan));
+
                 if (entry == NPC_DREADMAW && portalCaster)
                 {
                     portalCaster->SetFacingToObject(boss);
@@ -4915,7 +5782,7 @@ public:
                 }
 
                 if (Player* player = ObjectAccessor::GetPlayer(*me, playerGuid))
-                    player->GetSession()->SendAreaTriggerMessage("%s enters the ring!", name);
+                    player->GetSession()->SendAreaTriggerMessage("{} enters the ring!", name);
 
                 if (entry == NPC_EREDAR_SHARTUUL)
                 {
@@ -5014,7 +5881,7 @@ public:
             if (!boss || !shivan || !shivan->IsAlive())
                 return;
 
-            boss->SetFaction(FactionShartuulWaveDemon);
+            MakeShartuulPhaseThreeCreatureAttackable(boss);
             boss->SetInCombatWith(shivan);
             boss->AddThreat(shivan, 100000.0f);
             if (!boss->GetVictim())
@@ -5024,21 +5891,8 @@ public:
             {
                 case NPC_EYE_OF_SHARTUUL_TRANSFORM:
                 case NPC_EYE_OF_SHARTUUL:
-                    if (urand(0, 2) == 0)
-                    {
-                        if (Player* player = ObjectAccessor::GetPlayer(*me, playerGuid))
-                            player->GetSession()->SendAreaTriggerMessage("The Eye of Shartuul focuses intently!");
-                        SendShartuulCastBar(boss, shivan, SPELL_SHARTUUL_EYE_DARK_GLARE, 7000);
-                        boss->SetFacingToObject(shivan);
-                        boss->CastSpell(shivan, SPELL_SHARTUUL_EYE_DARK_GLARE, true);
-                        events.ScheduleEvent(EVENT_SHARTUUL_PHASE_THREE_DARK_GLARE_HIT, 7s);
-                    }
-                    else
-                    {
-                        boss->CastSpell(shivan, SPELL_SHARTUUL_GENERIC_FIREBALL, false);
-                        Unit::DealDamage(boss, shivan, 8500, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_FIRE);
-                    }
-                    events.ScheduleEvent(EVENT_SHARTUUL_PHASE_THREE_BOSS_ABILITY, 9s);
+                    boss->AI()->SetGUID(shivan->GetGUID(), DATA_SHARTUUL_DEGRADER);
+                    events.ScheduleEvent(EVENT_SHARTUUL_PHASE_THREE_BOSS_ABILITY, 5s);
                     break;
                 case NPC_DREADMAW:
                     boss->CastSpell(boss, SPELL_SHARTUUL_DREADMAW_GROWTH, true);
@@ -5295,8 +6149,13 @@ public:
                         SpawnPhaseThreeTentacles();
                         break;
                     case EVENT_SHARTUUL_TEST_PORTAL_VISUALS:
-                        if (!eventActive)
-                            RefreshPortalVisualTestHarness();
+                        RefreshPortalVisualTestHarness();
+                        break;
+                    case EVENT_SHARTUUL_TEST_SNIFF_VISUALS:
+                        RefreshSniffVisualTestHarness();
+                        break;
+                    case EVENT_SHARTUUL_TEST_EYE_VISUALS:
+                        RefreshEyeVisualTestHarness();
                         break;
                     case EVENT_SHARTUUL_TEST_EYE_INTRO_PORTAL:
                         TestEyeIntroOpenPortal();
@@ -6158,7 +7017,7 @@ public:
 class all_spell_shartuul_shivan_spell_handler : public AllSpellScript
 {
 public:
-    all_spell_shartuul_shivan_spell_handler() : AllSpellScript("all_spell_shartuul_shivan_spell_handler", { ALLSPELLHOOK_ON_CAST }) { }
+    all_spell_shartuul_shivan_spell_handler() : AllSpellScript("all_spell_shartuul_shivan_spell_handler", { ALLSPELLHOOK_ON_SPELL_CHECK_CAST, ALLSPELLHOOK_ON_CAST }) { }
 
     Creature* ResolveShivan(Unit* caster) const
     {
@@ -6175,7 +7034,156 @@ public:
         return nullptr;
     }
 
-    void OnSpellCast(Spell* /*spell*/, Unit* caster, SpellInfo const* spellInfo, bool /*skipCheck*/) override
+    Unit* ResolveTarget(Spell* spell, Creature* shivan) const
+    {
+        if (!shivan)
+            return nullptr;
+
+        if (spell)
+            if (Unit* target = spell->m_targets.GetUnitTarget())
+                return target;
+
+        if (Player* player = ObjectAccessor::GetPlayer(*shivan, shivan->GetCharmerGUID()))
+            if (Unit* target = player->GetSelectedUnit())
+                return target;
+
+        if (Unit* target = ObjectAccessor::GetUnit(*shivan, shivan->GetGuidValue(UNIT_FIELD_TARGET)))
+            return target;
+
+        return shivan->GetVictim();
+    }
+
+    bool IsPhaseThreeTarget(Unit const* target) const
+    {
+        if (!target || !target->IsAlive())
+            return false;
+
+        uint32 const entry = target->GetEntry();
+        return entry == NPC_EYE_OF_SHARTUUL_TRANSFORM
+            || entry == NPC_EYE_OF_SHARTUUL
+            || entry == NPC_DREADMAW
+            || entry == NPC_EREDAR_SHARTUUL
+            || entry == NPC_EYE_TENTACLE;
+    }
+
+    bool IsShivanSpell(uint32 spellId) const
+    {
+        switch (spellId)
+        {
+            case SPELL_SHARTUUL_SHIVAN_DEATH_BLAST:
+            case SPELL_SHARTUUL_SHIVAN_SIPHON_LIFE:
+            case SPELL_SHARTUUL_SHIVAN_SHADOW_NOVA:
+            case SPELL_SHARTUUL_SHIVAN_PYROBLAST:
+            case SPELL_SHARTUUL_SHIVAN_FLAME_BUFFET:
+            case SPELL_SHARTUUL_SHIVAN_CLEANSING_FLAME:
+            case SPELL_SHARTUUL_SHIVAN_ICEBLAST:
+            case SPELL_SHARTUUL_SHIVAN_ICY_LEAP:
+            case SPELL_SHARTUUL_SHIVAN_CHAOS_STRIKE:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    void HandleScriptedShivanSpell(Spell* spell, Creature* shivan, SpellInfo const* spellInfo)
+    {
+        if (!spellInfo || !shivan)
+            return;
+
+        Unit* target = ResolveTarget(spell, shivan);
+        if (!IsPhaseThreeTarget(target))
+            return;
+
+        shivan->SetInCombatWith(target);
+        target->SetInCombatWith(shivan);
+        if (Creature* creatureTarget = target->ToCreature())
+        {
+            creatureTarget->SetFaction(FactionShartuulPhaseThreeHostile);
+            creatureTarget->SetImmuneToAll(false);
+            creatureTarget->SetImmuneToPC(false);
+            creatureTarget->SetImmuneToNPC(false);
+            creatureTarget->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_PACIFIED | UNIT_FLAG_STUNNED);
+            creatureTarget->AI()->SetGUID(shivan->GetGUID(), DATA_SHARTUUL_DEGRADER);
+        }
+
+        uint32 damage = 0;
+        SpellSchoolMask school = SPELL_SCHOOL_MASK_NORMAL;
+        ShartuulShivanScriptedVisualCasters.insert(shivan->GetGUID());
+        switch (spellInfo->Id)
+        {
+            case SPELL_SHARTUUL_SHIVAN_DEATH_BLAST:
+                damage = 7000;
+                school = SPELL_SCHOOL_MASK_SHADOW;
+                shivan->CastSpell(target, SPELL_SHARTUUL_GENERIC_SHADOW_BOLT, true);
+                break;
+            case SPELL_SHARTUUL_SHIVAN_SIPHON_LIFE:
+                damage = 4000;
+                school = SPELL_SCHOOL_MASK_SHADOW;
+                shivan->CastSpell(target, SPELL_SHARTUUL_SHIVAN_SIPHON_LIFE, true);
+                shivan->ModifyHealth(int32(damage));
+                break;
+            case SPELL_SHARTUUL_SHIVAN_SHADOW_NOVA:
+                damage = 5500;
+                school = SPELL_SCHOOL_MASK_SHADOW;
+                shivan->CastSpell(shivan, SPELL_SHARTUUL_SHIVAN_SHADOW_NOVA, true);
+                break;
+            case SPELL_SHARTUUL_SHIVAN_PYROBLAST:
+                damage = 8000;
+                school = SPELL_SCHOOL_MASK_FIRE;
+                shivan->CastSpell(target, SPELL_SHARTUUL_SHIVAN_PYROBLAST, true);
+                break;
+            case SPELL_SHARTUUL_SHIVAN_FLAME_BUFFET:
+                damage = 4500;
+                school = SPELL_SCHOOL_MASK_FIRE;
+                shivan->CastSpell(target, SPELL_SHARTUUL_SHIVAN_FLAME_BUFFET, true);
+                break;
+            case SPELL_SHARTUUL_SHIVAN_CLEANSING_FLAME:
+                damage = 3000;
+                school = SPELL_SCHOOL_MASK_FIRE;
+                shivan->CastSpell(target, SPELL_SHARTUUL_SHIVAN_CLEANSING_FLAME, true);
+                break;
+            case SPELL_SHARTUUL_SHIVAN_ICEBLAST:
+                damage = 6000;
+                school = SPELL_SCHOOL_MASK_FROST;
+                shivan->CastSpell(target, SPELL_SHARTUUL_SHIVAN_ICEBLAST, true);
+                break;
+            case SPELL_SHARTUUL_SHIVAN_ICY_LEAP:
+                damage = 2500;
+                school = SPELL_SCHOOL_MASK_FROST;
+                shivan->CastSpell(target, SPELL_SHARTUUL_SHIVAN_ICY_LEAP, true);
+                break;
+            case SPELL_SHARTUUL_SHIVAN_CHAOS_STRIKE:
+                damage = 6500;
+                school = SPELL_SCHOOL_MASK_NORMAL;
+                shivan->CastSpell(target, SPELL_SHARTUUL_SHIVAN_CHAOS_STRIKE, true);
+                break;
+            default:
+                break;
+        }
+        ShartuulShivanScriptedVisualCasters.erase(shivan->GetGUID());
+
+        if (damage)
+            Unit::DealDamage(shivan, target, damage, nullptr, DIRECT_DAMAGE, school);
+    }
+
+    void OnSpellCheckCast(Spell* spell, bool /*strict*/, SpellCastResult& res) override
+    {
+        if (!spell)
+            return;
+
+        SpellInfo const* spellInfo = spell->GetSpellInfo();
+        if (!spellInfo || !IsShivanSpell(spellInfo->Id))
+            return;
+
+        Creature* shivan = ResolveShivan(spell->GetCaster());
+        if (!shivan || !shivan->isPossessed())
+            return;
+
+        if (IsPhaseThreeTarget(ResolveTarget(spell, shivan)))
+            res = SPELL_CAST_OK;
+    }
+
+    void OnSpellCast(Spell* spell, Unit* caster, SpellInfo const* spellInfo, bool /*skipCheck*/) override
     {
         if (!spellInfo)
             return;
@@ -6183,6 +7191,12 @@ public:
         Creature* shivan = ResolveShivan(caster);
         if (!shivan || !shivan->isPossessed())
             return;
+
+        if (ShartuulShivanScriptedVisualCasters.find(shivan->GetGUID()) != ShartuulShivanScriptedVisualCasters.end())
+            return;
+
+        if (IsShivanSpell(spellInfo->Id))
+            HandleScriptedShivanSpell(spell, shivan, spellInfo);
 
         switch (spellInfo->Id)
         {
@@ -6205,6 +7219,27 @@ public:
     }
 };
 
+class unit_shartuul_reaction_handler : public UnitScript
+{
+public:
+    unit_shartuul_reaction_handler() : UnitScript("unit_shartuul_reaction_handler", true, { UNITHOOK_IF_NORMAL_REACTION }) { }
+
+    bool IfNormalReaction(Unit const* unit, Unit const* target, ReputationRank& repRank) override
+    {
+        if (!unit || !target)
+            return true;
+
+        if ((IsPossessedShartuulControlledDemon(unit) && IsShartuulPhaseThreeCreature(target))
+            || (IsShartuulPhaseThreeCreature(unit) && IsPossessedShartuulControlledDemon(target)))
+        {
+            repRank = REP_HOSTILE;
+            return false;
+        }
+
+        return true;
+    }
+};
+
 void AddSC_shartuul_event()
 {
     new npc_shartuul_felguard_degrader();
@@ -6222,6 +7257,7 @@ void AddSC_shartuul_event()
     new player_shartuul_possession_spell_handler();
     new all_spell_shartuul_possession_spell_handler();
     new all_spell_shartuul_shivan_spell_handler();
+    new unit_shartuul_reaction_handler();
     RegisterSpellScript(spell_item_crystalforged_darkrune);
     RegisterSpellScript(spell_shartuul_smash_shield);
     RegisterSpellScript(spell_shartuul_doomguard_fel_flames);

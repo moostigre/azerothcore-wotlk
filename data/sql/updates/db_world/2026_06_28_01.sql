@@ -70,3 +70,9 @@ INSERT INTO `creature_template_model` (`CreatureID`, `Idx`, `CreatureDisplayID`,
 (23199, 0, 18288, 1, 1, 12340),
 (23212, 0, 19899, 0.5, 1, 12340),
 (23278, 0, 18820, 0.5, 1, 12340);
+
+DELETE FROM `creature`
+WHERE `guid` = 5300699;
+
+INSERT INTO `creature` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `phaseMask`, `equipment_id`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `currentwaypoint`, `curhealth`, `curmana`, `MovementType`, `npcflag`, `unit_flags`, `dynamicflags`, `ScriptName`, `VerifiedBuild`, `CreateObject`, `Comment`) VALUES
+(5300699, 23059, 1, 331, 2457, 1, 1, 0, 3994.9358, -3428.0635, 533.1404, 4.510522, 300, 0, 0, 2488, 0, 0, 0, 0, 0, '', 0, 0, 'Shartuul debug visual test controller');
