@@ -930,6 +930,56 @@ void ShartuulHandleDoomguardFelFlames(Unit* doomguard, Unit* target)
     }, Milliseconds(5500));
 }
 
+static bool RefreshPendingDoomguardFelFlames(Player* player, ShartuulPendingFelFlames& felFlames, bool castVisual)
+{
+    if (!player)
+        return false;
+
+    Creature* doomguard = ObjectAccessor::GetCreature(*player, felFlames.DoomguardGuid);
+    Unit* target = doomguard ? ObjectAccessor::GetUnit(*doomguard, felFlames.TargetGuid) : nullptr;
+    if (!doomguard || !doomguard->IsAlive() || !target || !target->IsAlive())
+        return false;
+
+    doomguard->SetFacingToObject(target);
+    doomguard->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
+    doomguard->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES);
+    doomguard->ClearUnitState(UNIT_STATE_CASTING);
+
+    if (Creature* helper = ObjectAccessor::GetCreature(*doomguard, felFlames.HelperGuid))
+    {
+        helper->NearTeleportTo(doomguard->GetPositionX(), doomguard->GetPositionY(), doomguard->GetPositionZ() + 1.0f, doomguard->GetOrientation());
+        helper->SetFacingToObject(target);
+        helper->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
+        helper->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES);
+
+        if (castVisual)
+        {
+            ShartuulFelFlamesVisualCasters.insert(helper->GetGUID());
+            helper->CastSpell(target, SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES, true);
+        }
+    }
+
+    if (castVisual)
+    {
+        ShartuulFelFlamesVisualCasters.insert(doomguard->GetGUID());
+        doomguard->CastSpell(target, SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES, true);
+        doomguard->ClearUnitState(UNIT_STATE_CASTING);
+    }
+
+    return true;
+}
+
+static void CastShartuulFelCannonBoltVisual(Unit* caster, Unit* target, bool triggered)
+{
+    if (!caster || !target)
+        return;
+
+    caster->SetFacingToObject(target);
+    caster->CastSpell(target, SPELL_SHARTUUL_FEL_CANNON_BLAST, triggered);
+    caster->CastSpell(target, SPELL_SHARTUUL_FEL_CANNON_TRACER, true);
+    caster->CastSpell(target, SPELL_SHARTUUL_FEL_CANNON_BOLT, triggered);
+}
+
 struct ShartuulWaveCreatureAI : public ScriptedAI
 {
     ShartuulWaveCreatureAI(Creature* creature) : ScriptedAI(creature) { }
@@ -2881,8 +2931,7 @@ public:
             switch (castType)
             {
                 case 1:
-                    me->CastSpell(target, SPELL_SHARTUUL_FEL_CANNON_TRACER, true);
-                    me->CastSpell(target, SPELL_SHARTUUL_FEL_CANNON_BOLT, false);
+                    CastShartuulFelCannonBoltVisual(me, target, false);
                     break;
                 case 2:
                     if (Creature* zone = CreateDisruptionGroundVisual(target, durationMs + 11000))
@@ -3044,8 +3093,7 @@ public:
             {
                 case 1:
                     me->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
-                    me->CastSpell(target, SPELL_SHARTUUL_FEL_CANNON_TRACER, true);
-                    me->CastSpell(target, SPELL_SHARTUUL_FEL_CANNON_BOLT, true);
+                    CastShartuulFelCannonBoltVisual(me, target, true);
                     DamageTarget(target, urand(26000, 32000), SPELL_SCHOOL_MASK_FIRE);
                     break;
                 case 2:
@@ -3056,7 +3104,6 @@ public:
                     me->HandleEmoteCommand(EMOTE_ONESHOT_SPELL_CAST);
                     if (GetShartuulShivanAspect(target) == ShartuulShivanAspect::Ice && IsShartuulShivanIceBlocked(target))
                     {
-                        target->SetFacingToObject(me);
                         target->CastSpell(target, SPELL_SHARTUUL_CTHUN_DARK_GLARE_VISUAL, true);
                         Unit::DealDamage(target, me, 50000, nullptr, SPELL_DIRECT_DAMAGE, SPELL_SCHOOL_MASK_SHADOW);
                         if (Player* player = ObjectAccessor::GetPlayer(*me, target->GetCharmerGUID()))
@@ -3140,7 +3187,6 @@ public:
                     {
                         if (GetShartuulShivanAspect(delayedTarget) == ShartuulShivanAspect::Ice && IsShartuulShivanIceBlocked(delayedTarget))
                         {
-                            delayedTarget->SetFacingToObject(me);
                             delayedTarget->CastSpell(delayedTarget, SPELL_SHARTUUL_CTHUN_DARK_GLARE_VISUAL, true);
                             Unit::DealDamage(delayedTarget, me, 50000, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_SHADOW);
                             if (Player* player = ObjectAccessor::GetPlayer(*me, delayedTarget->GetCharmerGUID()))
@@ -4049,7 +4095,7 @@ public:
                         uint32 roll = urand(0, 2);
                         if (roll == 0)
                         {
-                            boss->CastSpell(target, SPELL_SHARTUUL_GENERIC_FIREBALL, false);
+                            CastShartuulFelCannonBoltVisual(boss, target, false);
                             Unit::DealDamage(boss, target, 3500, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_FIRE);
                         }
                         else if (roll == 1)
@@ -4638,6 +4684,11 @@ public:
             }
         }
 
+        void SpawnWaveArrivalVisual(Position const& pos)
+        {
+            SpawnGatePortalBeam(pos);
+        }
+
         void SpawnShartuulSummonVisual(Creature* shartuul, Position const& targetPos)
         {
             if (!shartuul)
@@ -4832,7 +4883,7 @@ public:
 
         Creature* SpawnGanarg(Creature* controlled, Position const& pos)
         {
-            SpawnGatePortalVisual(pos);
+            SpawnWaveArrivalVisual(pos);
             Creature* ganarg = me->SummonCreature(NPC_SHARTUUL_GANARG_UNDERLING, pos, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 180000);
             if (ganarg)
                 PrepareWaveDemon(ganarg, controlled);
@@ -4842,7 +4893,7 @@ public:
 
         Creature* SpawnMoarg(Creature* controlled, Position const& pos)
         {
-            SpawnGatePortalVisual(pos);
+            SpawnWaveArrivalVisual(pos);
             Creature* moarg = me->SummonCreature(NPC_SHARTUUL_MOARG_TORMENTER, pos, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 180000);
             if (moarg)
                 PrepareWaveDemon(moarg, controlled, 0.5f);
@@ -5021,7 +5072,7 @@ public:
 
             Position pos = ganarg->GetPosition();
             pos.m_positionZ += 0.2f;
-            SpawnGatePortalVisual(pos);
+            SpawnWaveArrivalVisual(pos);
             if (Creature* cannon = me->SummonCreature(NPC_SHARTUUL_PORTABLE_FEL_CANNON, pos, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 120000))
                 PrepareWaveDemon(cannon, controlled);
 
@@ -5139,23 +5190,23 @@ public:
             switch (wave)
             {
                 case 1:
-                    SpawnGatePortalVisual(ShartuulWaveOneSpawn[0]);
-                    SpawnGatePortalVisual(ShartuulWaveOneSpawn[1]);
+                    SpawnWaveArrivalVisual(ShartuulWaveOneSpawn[0]);
+                    SpawnWaveArrivalVisual(ShartuulWaveOneSpawn[1]);
                     SpawnWaveHound(degrader, ShartuulWaveOneSpawn[0]);
                     SpawnWaveHound(degrader, ShartuulWaveOneSpawn[1], 0.55f);
                     SpawnWaveImp(degrader, ShartuulWaveOneSpawn[1]);
                     break;
                 case 2:
-                    SpawnGatePortalVisual(ShartuulWaveOneSpawn[0]);
-                    SpawnGatePortalVisual(ShartuulWaveOneSpawn[1]);
+                    SpawnWaveArrivalVisual(ShartuulWaveOneSpawn[0]);
+                    SpawnWaveArrivalVisual(ShartuulWaveOneSpawn[1]);
                     SpawnWaveHound(degrader, ShartuulWaveOneSpawn[0]);
                     SpawnWaveHound(degrader, ShartuulWaveOneSpawn[1]);
                     SpawnWaveHound(degrader, ShartuulWaveSpawn[2]);
                     SpawnWaveImp(degrader, ShartuulWaveOneSpawn[1]);
                     break;
                 case 3:
-                    SpawnGatePortalVisual(ShartuulWaveOneSpawn[0]);
-                    SpawnGatePortalVisual(ShartuulWaveOneSpawn[1]);
+                    SpawnWaveArrivalVisual(ShartuulWaveOneSpawn[0]);
+                    SpawnWaveArrivalVisual(ShartuulWaveOneSpawn[1]);
                     SpawnWaveHound(degrader, ShartuulWaveOneSpawn[0]);
                     SpawnWaveHound(degrader, ShartuulWaveOneSpawn[1]);
                     SpawnWaveImp(degrader, ShartuulWaveOneSpawn[1]);
@@ -5164,7 +5215,7 @@ public:
                 case 5:
                 case 6:
                     for (Position const& pos : ShartuulWaveSpawn)
-                        SpawnGatePortalVisual(pos);
+                        SpawnWaveArrivalVisual(pos);
 
                     for (uint8 i = 0; i < 8; ++i)
                         SpawnWaveHound(degrader, ShartuulWaveSpawn[i % std::size(ShartuulWaveSpawn)]);
@@ -5928,6 +5979,15 @@ public:
             Creature* shivan = GetControlledDemon();
             if (!boss || !shivan || (boss->GetEntry() != NPC_EYE_OF_SHARTUUL_TRANSFORM && boss->GetEntry() != NPC_EYE_OF_SHARTUUL))
                 return;
+
+            if (GetShartuulShivanAspect(shivan) == ShartuulShivanAspect::Ice && IsShartuulShivanIceBlocked(shivan))
+            {
+                shivan->CastSpell(shivan, SPELL_SHARTUUL_CTHUN_DARK_GLARE_VISUAL, true);
+                Unit::DealDamage(shivan, boss, 50000, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_SHADOW);
+                if (Player* player = ObjectAccessor::GetPlayer(*me, shivan->GetCharmerGUID()))
+                    player->GetSession()->SendAreaTriggerMessage("Ice Block reflects Dark Glare!");
+                return;
+            }
 
             Unit::DealDamage(boss, shivan, 100000, nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_SHADOW);
         }
@@ -6756,33 +6816,8 @@ public:
             {
                 if (felFlames.VisualTimer <= diff)
                 {
-                    doomguard->SetFacingToObject(target);
-                    doomguard->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
-                    doomguard->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES);
-                    doomguard->ClearUnitState(UNIT_STATE_CASTING);
-
-                    if (Creature* helper = ObjectAccessor::GetCreature(*doomguard, felFlames.HelperGuid))
-                    {
-                        helper->NearTeleportTo(doomguard->GetPositionX(), doomguard->GetPositionY(), doomguard->GetPositionZ() + 1.0f, doomguard->GetOrientation());
-                        helper->SetFacingToObject(target);
-                        helper->SetGuidValue(UNIT_FIELD_CHANNEL_OBJECT, target->GetGUID());
-                        helper->SetUInt32Value(UNIT_CHANNEL_SPELL, SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES);
-
-                        if (felFlames.TicksDone == 0)
-                        {
-                            ShartuulFelFlamesVisualCasters.insert(helper->GetGUID());
-                            helper->CastSpell(target, SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES, false);
-                        }
-                    }
-
-                    if (felFlames.TicksDone == 0)
-                    {
-                        ShartuulFelFlamesVisualCasters.insert(doomguard->GetGUID());
-                        doomguard->CastSpell(target, SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES, false);
-                        doomguard->ClearUnitState(UNIT_STATE_CASTING);
-                    }
-
-                    felFlames.VisualTimer = 250;
+                    RefreshPendingDoomguardFelFlames(player, felFlames, felFlames.TicksDone == 0);
+                    felFlames.VisualTimer = 100;
                 }
                 else
                     felFlames.VisualTimer -= diff;
@@ -6914,8 +6949,24 @@ public:
             return;
 
         SpellInfo const* spellInfo = spell->GetSpellInfo();
-        if (!spellInfo || spellInfo->Id != SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES)
+        if (!spellInfo)
             return;
+
+        if (spellInfo->Id != SPELL_SHARTUUL_DOOMGUARD_FEL_FLAMES)
+        {
+            auto felFlamesItr = ShartuulPendingFelFlamesCasts.find(player->GetGUID());
+            if (felFlamesItr == ShartuulPendingFelFlamesCasts.end())
+                return;
+
+            Unit* charm = player->GetCharm();
+            if (!charm || charm->GetEntry() != NPC_DOOMGUARD_PUNISHER)
+                return;
+
+            felFlamesItr->second.VisualTimer = 0;
+            RefreshPendingDoomguardFelFlames(player, felFlamesItr->second, false);
+
+            return;
+        }
 
         Unit* charm = player->GetCharm();
         if (!charm || charm->GetEntry() != NPC_DOOMGUARD_PUNISHER)
