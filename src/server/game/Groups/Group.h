@@ -25,6 +25,7 @@
 #include "QueryResult.h"
 #include "SharedDefines.h"
 #include <functional>
+#include <set>
 
 class Battlefield;
 class Battleground;
@@ -155,6 +156,8 @@ public:
     void setLoot(Loot* pLoot);
     Loot* getLoot();
     void targetObjectBuildLink();
+    void AddPlayerVote(ObjectGuid playerGuid, bool passOnLoot, bool canRoll);
+    [[nodiscard]] bool IsAutoPass(ObjectGuid playerGuid) const;
 
     ObjectGuid itemGUID;
     uint32 itemid;
@@ -169,6 +172,9 @@ public:
     uint8 totalPass;
     uint8 itemSlot;
     uint8 rollVoteMask;
+
+private:
+    std::set<ObjectGuid> _autoPassPlayers;                // players forced to pass because they cannot loot the item
 };
 
 /** request member stats checken **/
