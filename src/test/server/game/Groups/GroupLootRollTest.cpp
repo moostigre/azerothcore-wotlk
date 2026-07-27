@@ -1,0 +1,102 @@
+/*
+ * This file is part of the AzerothCore Project. See AUTHORS file for Copyright information
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "Group.h"
+#include "gtest/gtest.h"
+
+namespace
+{
+LootItem CreateLootItem()
+{
+    LootItem item;
+    item.itemid = 1;
+    item.randomPropertyId = 0;
+    item.randomSuffix = 0;
+    item.count = 1;
+    return item;
+}
+
+ObjectGuid PlayerGuid(uint32 counter)
+{
+    return ObjectGuid::Create<HighGuid::Player>(counter);
+}
+}
+
+TEST(GroupLootRollTest, EligiblePlayerWithPassOnLootCountsAsPass)
+{
+    LootItem const item = CreateLootItem();
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    ObjectGuid const playerGuid = PlayerGuid(1);
+
+    roll.AddPlayerVote(playerGuid, true, true);
+
+    EXPECT_EQ(roll.totalPlayersRolling, 1);
+    EXPECT_EQ(roll.totalPass, 1);
+    EXPECT_EQ(roll.playerVote[playerGuid], PASS);
+    EXPECT_FALSE(roll.IsAutoPass(playerGuid));
+}
+
+TEST(GroupLootRollTest, IneligiblePlayerCountsAsForcedAutoPass)
+{
+    LootItem const item = CreateLootItem();
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    ObjectGuid const playerGuid = PlayerGuid(1);
+
+    roll.AddPlayerVote(playerGuid, false, false);
+
+    EXPECT_EQ(roll.totalPlayersRolling, 1);
+    EXPECT_EQ(roll.totalPass, 1);
+    EXPECT_EQ(roll.playerVote[playerGuid], PASS);
+    EXPECT_TRUE(roll.IsAutoPass(playerGuid));
+}
+
+TEST(GroupLootRollTest, EligiblePlayerWithoutPassOnLootWaitsForVote)
+{
+    LootItem const item = CreateLootItem();
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    ObjectGuid const playerGuid = PlayerGuid(1);
+
+    roll.AddPlayerVote(playerGuid, false, true);
+
+    EXPECT_EQ(roll.totalPlayersRolling, 1);
+    EXPECT_EQ(roll.totalPass, 0);
+    EXPECT_EQ(roll.playerVote[playerGuid], NOT_EMITED_YET);
+    EXPECT_FALSE(roll.IsAutoPass(playerGuid));
+}
+
+TEST(GroupLootRollTest, AutoPassesAllowRollToCompleteWhenOtherPlayersVote)
+{
+    LootItem const item = CreateLootItem();
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    ObjectGuid const optedPassGuid = PlayerGuid(1);
+    ObjectGuid const forcedPassGuid = PlayerGuid(2);
+    ObjectGuid const needGuid = PlayerGuid(3);
+    ObjectGuid const greedGuid = PlayerGuid(4);
+
+    roll.AddPlayerVote(optedPassGuid, true, true);
+    roll.AddPlayerVote(forcedPassGuid, false, false);
+    roll.AddPlayerVote(needGuid, false, true);
+    roll.AddPlayerVote(greedGuid, false, true);
+
+    roll.playerVote[needGuid] = NEED;
+    ++roll.totalNeed;
+    roll.playerVote[greedGuid] = GREED;
+    ++roll.totalGreed;
+
+    EXPECT_EQ(roll.totalPass, 2);
+    EXPECT_EQ(roll.totalPass + roll.totalNeed + roll.totalGreed, roll.totalPlayersRolling);
+}
