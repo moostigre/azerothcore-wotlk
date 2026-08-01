@@ -84,12 +84,17 @@ uint32 RandomDelay(uint32 minimum, uint32 maximum)
 
 void ApplyHealthScaling(Creature* creature)
 {
-    uint64 maximumHealth = std::max<uint64>(1,
-        static_cast<uint64>(std::llround(creature->GetMaxHealth() * GetHealthMultiplier(creature))));
-    uint32 scaledHealth = static_cast<uint32>(std::min<uint64>(maximumHealth, UINT32_MAX));
-    creature->SetCreateHealth(scaledHealth);
-    creature->SetMaxHealth(scaledHealth);
-    creature->SetHealth(scaledHealth);
+    float baseHealth = creature->GetFlatModifierValue(UNIT_MOD_HEALTH, BASE_VALUE);
+    if (baseHealth <= 0.0f)
+        baseHealth = static_cast<float>(creature->GetMaxHealth());
+
+    double scaledBaseHealth = std::max(1.0,
+        std::round(static_cast<double>(baseHealth) * GetHealthMultiplier(creature)));
+    creature->SetStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE,
+        static_cast<float>(std::min<double>(scaledBaseHealth, UINT32_MAX)));
+    creature->UpdateMaxHealth();
+    creature->SetCreateHealth(creature->GetMaxHealth());
+    creature->SetHealth(creature->GetMaxHealth());
     healthScaledCreatures.insert(creature->GetGUID());
 }
 
