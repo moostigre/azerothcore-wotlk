@@ -197,7 +197,7 @@ void LoadConfig()
     config = Config();
     config.enabled = sConfigMgr->GetOption<bool>("HeroicDungeons.Enable", true);
     config.yamlPath = sConfigMgr->GetOption<std::string>(
-        "HeroicDungeons.YamlPath", "modules/heroic_dungeons.yaml");
+        "HeroicDungeons.YamlPath", "etc/modules/heroic_dungeons.yaml");
 
     if (!config.enabled)
         return;

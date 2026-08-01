@@ -1,4 +1,4 @@
 [worldserver]
 
 HeroicDungeons.Enable = 1
-HeroicDungeons.YamlPath = "modules/heroic_dungeons.yaml"
+HeroicDungeons.YamlPath = "etc/modules/heroic_dungeons.yaml"

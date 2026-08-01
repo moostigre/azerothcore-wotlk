@@ -103,7 +103,7 @@ struct DungeonConfig
 struct Config
 {
     bool enabled = true;
-    std::string yamlPath = "modules/heroic_dungeons.yaml";
+    std::string yamlPath = "etc/modules/heroic_dungeons.yaml";
     std::unordered_map<uint32, DungeonConfig> dungeons;
 };
 
