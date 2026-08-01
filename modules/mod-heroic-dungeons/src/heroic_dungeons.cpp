@@ -36,6 +36,7 @@ struct AbilityState
 Config config;
 std::unordered_map<ObjectGuid, AbilityState> abilityStates;
 std::unordered_set<uint64> authorizedCasts;
+std::unordered_set<ObjectGuid> healthScaledCreatures;
 
 std::vector<std::string> Split(std::string const& value, char delimiter)
 {
@@ -79,6 +80,17 @@ uint32 RandomDelay(uint32 minimum, uint32 maximum)
     if (maximum < minimum)
         std::swap(minimum, maximum);
     return minimum == maximum ? minimum : urand(minimum, maximum);
+}
+
+void ApplyHealthScaling(Creature* creature)
+{
+    uint64 maximumHealth = std::max<uint64>(1,
+        static_cast<uint64>(std::llround(creature->GetMaxHealth() * GetHealthMultiplier(creature))));
+    uint32 scaledHealth = static_cast<uint32>(std::min<uint64>(maximumHealth, UINT32_MAX));
+    creature->SetCreateHealth(scaledHealth);
+    creature->SetMaxHealth(scaledHealth);
+    creature->SetHealth(scaledHealth);
+    healthScaledCreatures.insert(creature->GetGUID());
 }
 
 void ParseCreatureModifiers(std::string const& value)
@@ -327,20 +339,22 @@ public:
         if (!IsEnabledFor(creature))
             return;
 
-        uint64 maximumHealth = std::max<uint64>(1,
-            static_cast<uint64>(std::llround(creature->GetMaxHealth() * GetHealthMultiplier(creature))));
-        creature->SetMaxHealth(static_cast<uint32>(std::min<uint64>(maximumHealth, UINT32_MAX)));
-        creature->SetHealth(creature->GetMaxHealth());
+        ApplyHealthScaling(creature);
     }
 
     void OnAllCreatureUpdate(Creature* creature, uint32 diff) override
     {
         if (IsEnabledFor(creature))
+        {
+            if (!healthScaledCreatures.contains(creature->GetGUID()))
+                ApplyHealthScaling(creature);
             UpdateAbilities(creature, diff);
+        }
     }
 
     void OnCreatureRemoveWorld(Creature* creature) override
     {
+        healthScaledCreatures.erase(creature->GetGUID());
         ResetCreature(creature->GetGUID());
     }
 };
