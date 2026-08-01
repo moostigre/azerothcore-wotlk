@@ -15,6 +15,7 @@ namespace HeroicDungeons
 {
 constexpr uint32 MAP_STRATHOLME = 329;
 constexpr uint32 NPC_BARON_RIVENDARE = 10440;
+constexpr uint32 NPC_BARONESS_ANASTARI = 10436;
 
 enum class AbilityTarget : uint8
 {
@@ -50,11 +51,17 @@ struct Config
     float health = 3.0f;
     float meleeDamage = 1.6f;
     float spellDamage = 1.4f;
+    bool serviceEntranceForcesHeroic = true;
     bool baronEnabled = true;
     uint32 baronSkeletonEntry = 11197;
     uint32 baronSkeletonCount = 6;
     uint32 baronRaiseDeadSpell = 17473;
     uint32 baronEnrageSpell = 8599;
+    bool anastariEnabled = true;
+    uint32 anastariBansheeEntry = 10464;
+    uint32 anastariBansheeCount = 3;
+    uint32 anastariWailSpell = 16565;
+    uint32 anastariEnrageSpell = 8599;
     std::unordered_map<uint32, CreatureModifier> creatureModifiers;
     std::unordered_map<uint32, std::vector<Ability>> abilities;
 };

@@ -10,11 +10,12 @@ HeroicDungeons.Stratholme.ResetSeconds = 86400
 HeroicDungeons.Stratholme.HealthMultiplier = 3.0
 HeroicDungeons.Stratholme.MeleeDamageMultiplier = 1.6
 HeroicDungeons.Stratholme.SpellDamageMultiplier = 1.4
+HeroicDungeons.Stratholme.ServiceEntranceForcesHeroic = 1
 
 # Per-creature overrides:
 # creatureEntry:healthMultiplier:meleeDamageMultiplier
 # A value of 0 inherits the dungeon-wide multiplier.
-HeroicDungeons.Stratholme.CreatureModifiers = "10440:4.0:1.8;10811:3.5:1.6"
+HeroicDungeons.Stratholme.CreatureModifiers = "10436:4.0:1.7;10440:4.0:1.8;10811:3.5:1.6"
 
 # Heroic abilities:
 # creatureEntry:spellId:damageMultiplier:initialMinMs:initialMaxMs:
@@ -24,7 +25,7 @@ HeroicDungeons.Stratholme.CreatureModifiers = "10440:4.0:1.8;10811:3.5:1.6"
 # replaceOriginal: 1 blocks that creature's ordinary AI from casting the same
 # spell; the heroic scheduler becomes the authoritative cooldown source.
 # Damage multiplier 0 inherits the dungeon-wide spell multiplier.
-HeroicDungeons.Stratholme.Abilities = "10440:17393:1.8:3000:5000:7000:9000:1:1;10440:15245:1.5:8000:10000:14000:18000:1:0;10811:17293:1.7:3000:5000:9000:12000:1:1"
+HeroicDungeons.Stratholme.Abilities = "10436:16565:1.7:2000:3000:6000:8000:1:1;10436:15245:1.5:8000:10000:14000:18000:1:0;10440:17393:1.8:3000:5000:7000:9000:1:1;10440:15245:1.5:8000:10000:14000:18000:1:0;10811:17293:1.7:3000:5000:9000:12000:1:1"
 
 # Dedicated Baron Rivendare heroic mechanics. These are implemented in a
 # separate encounter extension rather than the generic trash scheduler.
@@ -33,3 +34,9 @@ HeroicDungeons.Stratholme.Baron.SkeletonEntry = 11197
 HeroicDungeons.Stratholme.Baron.SkeletonCount = 6
 HeroicDungeons.Stratholme.Baron.RaiseDeadSpell = 17473
 HeroicDungeons.Stratholme.Baron.EnrageSpell = 8599
+
+HeroicDungeons.Stratholme.Anastari.Enable = 1
+HeroicDungeons.Stratholme.Anastari.BansheeEntry = 10464
+HeroicDungeons.Stratholme.Anastari.BansheeCount = 3
+HeroicDungeons.Stratholme.Anastari.WailSpell = 16565
+HeroicDungeons.Stratholme.Anastari.EnrageSpell = 8599

@@ -162,6 +162,8 @@ void LoadConfig()
         sConfigMgr->GetOption<float>("HeroicDungeons.Stratholme.MeleeDamageMultiplier", 1.6f));
     config.spellDamage = std::max(0.0f,
         sConfigMgr->GetOption<float>("HeroicDungeons.Stratholme.SpellDamageMultiplier", 1.4f));
+    config.serviceEntranceForcesHeroic = sConfigMgr->GetOption<bool>(
+        "HeroicDungeons.Stratholme.ServiceEntranceForcesHeroic", true);
     config.baronEnabled = sConfigMgr->GetOption<bool>("HeroicDungeons.Stratholme.Baron.Enable", true);
     config.baronSkeletonEntry =
         sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Baron.SkeletonEntry", 11197);
@@ -171,6 +173,15 @@ void LoadConfig()
         sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Baron.RaiseDeadSpell", 17473);
     config.baronEnrageSpell =
         sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Baron.EnrageSpell", 8599);
+    config.anastariEnabled = sConfigMgr->GetOption<bool>("HeroicDungeons.Stratholme.Anastari.Enable", true);
+    config.anastariBansheeEntry =
+        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Anastari.BansheeEntry", 10464);
+    config.anastariBansheeCount =
+        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Anastari.BansheeCount", 3);
+    config.anastariWailSpell =
+        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Anastari.WailSpell", 16565);
+    config.anastariEnrageSpell =
+        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Anastari.EnrageSpell", 8599);
 
     ParseCreatureModifiers(sConfigMgr->GetOption<std::string>(
         "HeroicDungeons.Stratholme.CreatureModifiers", ""));

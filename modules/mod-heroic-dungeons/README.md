@@ -36,6 +36,10 @@ The default configuration:
 - adds Shadow Bolt Volley to Baron Rivendare;
 - extends Baron Rivendare with skeleton waves at 70% health and an enrage
   phase at 35% health.
+- makes the Stratholme service entrance select Heroic difficulty before the
+  teleport, while leaving the main entrance unchanged;
+- gives Heroic Baroness Anastari additional Banshee mechanics and a guaranteed
+  Savage Gladiator Chain (item 11726) drop through Heroic loot mode.
 
 The generic engine lives in `src/heroic_dungeons.cpp`. Boss-specific mechanics
 live in separate files such as `src/boss_baron_rivendare_heroic.cpp`, allowing
