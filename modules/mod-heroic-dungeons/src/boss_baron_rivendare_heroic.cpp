@@ -2,6 +2,7 @@
 
 #include "AllCreatureScript.h"
 #include "Creature.h"
+#include "CreatureAI.h"
 #include "Map.h"
 #include "Random.h"
 #include "TemporarySummon.h"
