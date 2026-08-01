@@ -1,0 +1,74 @@
+#ifndef MOD_HEROIC_DUNGEONS_H
+#define MOD_HEROIC_DUNGEONS_H
+
+#include "Define.h"
+#include "ObjectGuid.h"
+
+#include <unordered_map>
+#include <vector>
+
+class Creature;
+class Spell;
+class Unit;
+
+namespace HeroicDungeons
+{
+constexpr uint32 MAP_STRATHOLME = 329;
+constexpr uint32 NPC_BARON_RIVENDARE = 10440;
+
+enum class AbilityTarget : uint8
+{
+    Victim = 0,
+    RandomPlayer = 1,
+    Self = 2
+};
+
+struct CreatureModifier
+{
+    float health = 0.0f;
+    float meleeDamage = 0.0f;
+};
+
+struct Ability
+{
+    uint32 creatureEntry = 0;
+    uint32 spellId = 0;
+    float damage = 0.0f;
+    uint32 initialMin = 0;
+    uint32 initialMax = 0;
+    uint32 cooldownMin = 0;
+    uint32 cooldownMax = 0;
+    AbilityTarget target = AbilityTarget::Victim;
+    bool replaceOriginal = false;
+};
+
+struct Config
+{
+    bool enabled = true;
+    bool stratholmeEnabled = true;
+    uint32 stratholmeResetSeconds = 86400;
+    float health = 3.0f;
+    float meleeDamage = 1.6f;
+    float spellDamage = 1.4f;
+    bool baronEnabled = true;
+    uint32 baronSkeletonEntry = 11197;
+    uint32 baronSkeletonCount = 6;
+    uint32 baronRaiseDeadSpell = 17473;
+    uint32 baronEnrageSpell = 8599;
+    std::unordered_map<uint32, CreatureModifier> creatureModifiers;
+    std::unordered_map<uint32, std::vector<Ability>> abilities;
+};
+
+Config const& GetConfig();
+void LoadConfig();
+bool IsEnabledFor(Creature const* creature);
+float GetHealthMultiplier(Creature const* creature);
+float GetMeleeDamageMultiplier(Creature const* creature);
+float GetSpellDamageMultiplier(Creature const* creature, uint32 spellId);
+bool ShouldReplaceOriginalCast(Creature const* creature, uint32 spellId);
+bool IsAuthorizedHeroicCast(Spell const* spell);
+void UpdateAbilities(Creature* creature, uint32 diff);
+void ResetCreature(ObjectGuid guid);
+}
+
+#endif
