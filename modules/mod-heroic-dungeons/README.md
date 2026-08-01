@@ -1,5 +1,13 @@
 # mod-heroic-dungeons
 
+## Low-level client difficulty menu
+
+WoW 3.3.5a hides the Dungeon Difficulty submenu below level 65. The optional
+client addon in [`client/Cloud9HeroicUI`](client/Cloud9HeroicUI) restores the
+stock menu so players can select **5 Player (Heroic)** for configured
+low-level heroic dungeons. Installation instructions are in
+[`client/README.md`](client/README.md).
+
 Server-side heroic versions of expansion endgame dungeons for AzerothCore
 3.3.5a. The first implementation enables Heroic Stratholme (map 329).
 
