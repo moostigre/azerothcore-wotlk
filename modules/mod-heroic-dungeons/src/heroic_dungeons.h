@@ -95,10 +95,12 @@ struct DungeonConfig
     uint32 mapId = 0;
     bool enabled = true;
     uint32 resetSeconds = 86400;
+    uint8 minimumLevel = 1;
+    uint8 maximumLevel = 80;
+    std::vector<uint32> heroicEntranceTriggers;
     float health = 1.0f;
     float meleeDamage = 1.0f;
     float spellDamage = 1.0f;
-    bool serviceEntranceForcesHeroic = false;
     std::unordered_map<uint32, CreatureModifier> creatureModifiers;
     std::unordered_map<uint32, std::vector<Ability>> abilities;
     std::unordered_map<uint32, LootRule> lootRules;

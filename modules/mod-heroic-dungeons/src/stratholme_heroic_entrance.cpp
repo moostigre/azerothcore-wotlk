@@ -5,19 +5,27 @@
 #include "Group.h"
 #include "Player.h"
 
+#include <algorithm>
+
 namespace
 {
-class HeroicStratholmeServiceEntrance final : public AreaTriggerScript
+class HeroicDungeonEntrance final : public AreaTriggerScript
 {
 public:
-    HeroicStratholmeServiceEntrance() : AreaTriggerScript("heroic_stratholme_service_entrance") { }
+    HeroicDungeonEntrance() : AreaTriggerScript("heroic_dungeon_entrance") { }
 
-    bool OnTrigger(Player* player, AreaTrigger const* /*trigger*/) override
+    bool OnTrigger(Player* player, AreaTrigger const* trigger) override
     {
-        HeroicDungeons::DungeonConfig const* dungeon =
-            HeroicDungeons::GetDungeonConfig(HeroicDungeons::MAP_STRATHOLME);
-        if (!HeroicDungeons::GetConfig().enabled || !dungeon || !dungeon->enabled ||
-            !dungeon->serviceEntranceForcesHeroic)
+        HeroicDungeons::DungeonConfig const* dungeon = nullptr;
+        for (auto const& [mapId, candidate] : HeroicDungeons::GetConfig().dungeons)
+            if (std::find(candidate.heroicEntranceTriggers.begin(), candidate.heroicEntranceTriggers.end(),
+                trigger->entry) != candidate.heroicEntranceTriggers.end())
+            {
+                dungeon = HeroicDungeons::GetDungeonConfig(mapId);
+                break;
+            }
+
+        if (!HeroicDungeons::GetConfig().enabled || !dungeon || !dungeon->enabled)
             return false;
 
         if (Group* group = player->GetGroup())
@@ -25,8 +33,8 @@ public:
         else
             player->SetDungeonDifficulty(DUNGEON_DIFFICULTY_HEROIC);
 
-        ChatHandler(player->GetSession()).SendSysMessage(
-            "|cff00ff00[Heroic Dungeons]|r Heroic Stratholme selected through the service entrance.");
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cff00ff00[Heroic Dungeons]|r Heroic {} selected.", dungeon->name);
         return false;
     }
 };
@@ -34,5 +42,5 @@ public:
 
 void AddSC_stratholme_heroic_entrance()
 {
-    new HeroicStratholmeServiceEntrance();
+    new HeroicDungeonEntrance();
 }

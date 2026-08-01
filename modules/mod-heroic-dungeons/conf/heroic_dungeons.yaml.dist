@@ -6,7 +6,9 @@ dungeons:
     map: 329
     enabled: true
     reset_seconds: 86400
-    service_entrance_forces_heroic: true
+    minimum_level: 55
+    maximum_level: 62
+    heroic_entrance_triggers: [2216, 2217]
 
     modifiers:
       health: 3.0
@@ -112,60 +114,150 @@ dungeons:
             target: random_player
             replace_original: true
 
-# Complete Ragefire Chasm example (disabled/commented).
-# Remove one leading "# " from every line to enable and edit it. This example
-# demonstrates every generic option supported for any dungeon and creature.
-#
-#  - name: ragefire_chasm
-#    map: 389
-#    enabled: true
-#    reset_seconds: 86400
-#    service_entrance_forces_heroic: false # Stratholme service entrance only
-#
-#    modifiers:
-#      health: 3.0              # Overall creature HP multiplier
-#      melee_damage: 1.5        # Overall white/melee damage multiplier
-#      spell_damage: 1.4        # Default spell damage multiplier
-#
-#    creatures:
-#      - entry: 11520           # Creature template ID
-#        health: 5.0            # Optional; omit or use 0 to inherit overall
-#        melee_damage: 2.0      # Optional; omit or use 0 to inherit overall
-#        spells:
-#          - id: 9532           # Existing or additional spell ID
-#            damage: 1.8        # Optional; 0 inherits overall spell damage
-#            initial_min_ms: 2000
-#            initial_max_ms: 4000
-#            cooldown_min_ms: 7000
-#            cooldown_max_ms: 10000
-#            target: victim     # victim, random_player, or self
-#            replace_original: true # Block ordinary cast and use this schedule
-#          - id: 11970          # Example additional ability
-#            damage: 1.5
-#            initial_min_ms: 5000
-#            initial_max_ms: 8000
-#            cooldown_min_ms: 12000
-#            cooldown_max_ms: 16000
-#            target: random_player
-#            replace_original: false
-#        phases:
-#          - health_below: 70  # Activate below this health percentage
-#            once: true        # false repeats according to repeat_ms
-#            repeat_ms: 10000
-#            actions:
-#              - cast: 8599    # Spell ID
-#                target: self  # victim, random_player, or self
-#              - summon:
-#                  entry: 11319
-#                  count: 4
-#                  radius: 6.0
-#                  despawn_ms: 15000
-#                target: victim # Summons immediately attack this target
-#        loot:
-#          mode: replace        # add keeps normal loot; replace uses YAML only
-#          items:
-#            - id: 11726
-#              chance: 100.0    # 0.01 through 100
-#              min_count: 1
-#              max_count: 1
-#              group_id: 0
+  # A deliberately moderate level 15-20 Heroic Ragefire Chasm demonstration.
+  # Trash receives a small baseline increase; boss overrides and phases add
+  # interest without turning this introductory dungeon into a raid encounter.
+  - name: ragefire_chasm
+    map: 389
+    enabled: true
+    reset_seconds: 86400
+    minimum_level: 15
+    maximum_level: 20
+    heroic_entrance_triggers: [2230]
+
+    modifiers:
+      health: 1.35
+      melee_damage: 1.12
+      spell_damage: 1.10
+
+    creatures:
+      - entry: 11517 # Oggleflint
+        health: 1.50
+        melee_damage: 1.15
+        spells:
+          - id: 40505 # Cleave
+            damage: 1.10
+            initial_min_ms: 3000
+            initial_max_ms: 5000
+            cooldown_min_ms: 10000
+            cooldown_max_ms: 13000
+            target: victim
+            replace_original: true
+        phases:
+          - health_below: 60
+            once: true
+            actions:
+              - summon:
+                  entry: 11319 # Ragefire Shaman
+                  count: 1
+                  radius: 4.0
+                  despawn_ms: 12000
+                target: victim
+          - health_below: 30
+            once: true
+            actions:
+              - cast: 8599 # Enrage
+                target: self
+
+      - entry: 11518 # Jergosh the Invoker
+        health: 1.60
+        melee_damage: 1.10
+        spells:
+          - id: 18267 # Curse of Weakness
+            damage: 0
+            initial_min_ms: 2000
+            initial_max_ms: 3000
+            cooldown_min_ms: 24000
+            cooldown_max_ms: 28000
+            target: random_player
+            replace_original: true
+          - id: 20800 # Immolate
+            damage: 1.10
+            initial_min_ms: 4000
+            initial_max_ms: 6000
+            cooldown_min_ms: 12000
+            cooldown_max_ms: 16000
+            target: random_player
+            replace_original: true
+        phases:
+          - health_below: 55
+            once: true
+            actions:
+              - summon:
+                  entry: 11322 # Searing Blade Cultist
+                  count: 1
+                  radius: 4.0
+                  despawn_ms: 15000
+                target: random_player
+
+      - entry: 11519 # Bazzalan
+        health: 1.55
+        melee_damage: 1.15
+        spells:
+          - id: 2818 # Deadly Poison
+            damage: 1.10
+            initial_min_ms: 3000
+            initial_max_ms: 4000
+            cooldown_min_ms: 6000
+            cooldown_max_ms: 8000
+            target: victim
+            replace_original: true
+          - id: 14873 # Sinister Strike
+            damage: 1.15
+            initial_min_ms: 4000
+            initial_max_ms: 5000
+            cooldown_min_ms: 7000
+            cooldown_max_ms: 9000
+            target: victim
+            replace_original: true
+        phases:
+          - health_below: 50
+            once: true
+            actions:
+              - summon:
+                  entry: 11318 # Ragefire Trogg
+                  count: 2
+                  radius: 5.0
+                  despawn_ms: 12000
+                target: victim
+          - health_below: 25
+            once: true
+            actions:
+              - cast: 8599 # Enrage
+                target: self
+
+      - entry: 11520 # Taragaman the Hungerer
+        health: 1.75
+        melee_damage: 1.18
+        spells:
+          - id: 18072 # Uppercut
+            damage: 1.15
+            initial_min_ms: 4000
+            initial_max_ms: 6000
+            cooldown_min_ms: 10000
+            cooldown_max_ms: 12000
+            target: victim
+            replace_original: true
+          - id: 11970 # Fire Nova
+            damage: 1.10
+            initial_min_ms: 8000
+            initial_max_ms: 11000
+            cooldown_min_ms: 15000
+            cooldown_max_ms: 18000
+            target: self
+            replace_original: true
+        phases:
+          - health_below: 65
+            once: true
+            actions:
+              - summon:
+                  entry: 11321 # Molten Elemental
+                  count: 2
+                  radius: 5.0
+                  despawn_ms: 15000
+                target: random_player
+          - health_below: 30
+            once: true
+            actions:
+              - cast: 11970 # Final Fire Nova
+                target: self

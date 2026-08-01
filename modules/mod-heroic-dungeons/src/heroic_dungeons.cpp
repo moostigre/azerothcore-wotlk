@@ -199,6 +199,9 @@ void SynchronizeYamlDatabase()
     WorldDatabase.DirectExecute(
         "DELETE FROM `creature_loot_template` WHERE `Comment` LIKE 'Heroic YAML:%' OR "
         "`Comment` = 'Heroic Baroness Anastari - Savage Gladiator Chain'");
+    WorldDatabase.DirectExecute(
+        "DELETE FROM `areatrigger_scripts` WHERE `ScriptName` IN "
+        "('heroic_stratholme_service_entrance','heroic_dungeon_entrance')");
 
     for (auto const& [mapId, dungeon] : config.dungeons)
     {
@@ -207,6 +210,11 @@ void SynchronizeYamlDatabase()
 
         WorldDatabase.DirectExecute("UPDATE `creature` SET `spawnMask` = `spawnMask` | 2 WHERE `map` = {}", mapId);
         WorldDatabase.DirectExecute("UPDATE `gameobject` SET `spawnMask` = `spawnMask` | 2 WHERE `map` = {}", mapId);
+
+        for (uint32 triggerId : dungeon.heroicEntranceTriggers)
+            WorldDatabase.DirectExecute(
+                "INSERT INTO `areatrigger_scripts` (`entry`,`ScriptName`) VALUES ({},'heroic_dungeon_entrance')",
+                triggerId);
 
         for (auto const& [creatureEntry, loot] : dungeon.lootRules)
             for (LootItemRule const& item : loot.items)
@@ -272,8 +280,13 @@ void LoadConfig()
             dungeon.mapId = ReadValue<uint32>(dungeonNode, "map", 0);
             dungeon.enabled = ReadValue<bool>(dungeonNode, "enabled", true);
             dungeon.resetSeconds = ReadValue<uint32>(dungeonNode, "reset_seconds", 86400);
-            dungeon.serviceEntranceForcesHeroic =
-                ReadValue<bool>(dungeonNode, "service_entrance_forces_heroic", false);
+            dungeon.minimumLevel = ReadValue<uint8>(dungeonNode, "minimum_level", 1);
+            dungeon.maximumLevel = ReadValue<uint8>(dungeonNode, "maximum_level", 80);
+            if (dungeon.maximumLevel < dungeon.minimumLevel)
+                std::swap(dungeon.minimumLevel, dungeon.maximumLevel);
+            if (dungeonNode.contains("heroic_entrance_triggers"))
+                for (fkyaml::node const& triggerNode : dungeonNode["heroic_entrance_triggers"])
+                    dungeon.heroicEntranceTriggers.push_back(triggerNode.get_value<uint32>());
             if (!dungeon.mapId)
                 throw std::runtime_error("Dungeon '" + dungeon.name + "' has an invalid map id");
 
@@ -513,6 +526,16 @@ class HeroicDungeonCreatureScript final : public AllCreatureScript
 public:
     HeroicDungeonCreatureScript() : AllCreatureScript("HeroicDungeonCreatureScript") { }
 
+    void OnBeforeCreatureSelectLevel(CreatureTemplate const* /*creatureTemplate*/, Creature* creature,
+        uint8& level) override
+    {
+        if (IsEnabledFor(creature))
+        {
+            DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+            level = std::clamp(level, dungeon->minimumLevel, dungeon->maximumLevel);
+        }
+    }
+
     void OnCreatureSelectLevel(CreatureTemplate const* /*creatureTemplate*/, Creature* creature) override
     {
         if (!IsEnabledFor(creature))
@@ -525,10 +548,16 @@ public:
     {
         if (IsEnabledFor(creature))
         {
+            DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+            if (creature->GetLevel() < dungeon->minimumLevel || creature->GetLevel() > dungeon->maximumLevel)
+            {
+                healthScaledCreatures.erase(creature->GetGUID());
+                creature->SelectLevel();
+            }
+
             if (!healthScaledCreatures.contains(creature->GetGUID()))
                 ApplyHealthScaling(creature);
 
-            DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
             auto loot = dungeon->lootRules.find(creature->GetEntry());
             if (loot != dungeon->lootRules.end())
             {

@@ -13,6 +13,7 @@ entering the heroic instance. Normal Stratholme remains unchanged.
 `heroic_dungeons.yaml`. The YAML file is the source of truth for:
 
 - dungeon-wide health, melee-damage, and spell-damage multipliers;
+- minimum and maximum creature levels per Heroic dungeon;
 - per-creature health and melee overrides;
 - per-creature/per-spell damage modifiers;
 - replacement cooldowns for spells already used by a creature;
@@ -26,6 +27,10 @@ At startup the module parses every enabled dungeon, creates its Heroic
 YAML-owned rows in `creature_loot_template`. YAML-owned loot rows use comments
 beginning with `Heroic YAML:` so the synchronization never deletes unrelated
 loot.
+
+`heroic_entrance_triggers` lists the outside area-trigger IDs that should
+select Heroic before the normal AzerothCore teleport. This makes old dungeons
+with no reliable client difficulty selection usable without a client patch.
 
 `add` mode combines the normal table with the YAML Heroic table. `replace`
 mode selects only the YAML Heroic table. Runtime multipliers and spell rules
@@ -59,6 +64,6 @@ self targets. Summon actions configure the creature entry, count, radius,
 despawn time, and initial attack target. Mechanics that require movement paths
 or instance-wide coordination can still be added as focused C++ extensions.
 
-The distributed YAML ends with a fully commented Ragefire Chasm example that
-documents every generic dungeon, creature, spell, targeting, cooldown, phase,
-summon, and loot option.
+The distributed YAML includes an enabled, moderately tuned level 15-20
+Ragefire Chasm demonstration. Its four bosses show spell replacement, summons,
+health phases, and targeting without using dungeon-specific C++ scripts.
