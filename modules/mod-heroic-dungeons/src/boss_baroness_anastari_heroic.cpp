@@ -33,6 +33,10 @@ public:
             return;
         }
 
+        // Creature loot defaults to mode 1 even on Heroic dungeon maps. Enable
+        // the module's mode 2 rows only after the map difficulty is verified.
+        creature->AddLootMode(2);
+
         AnastariState& state = anastariStates[creature->GetGUID()];
         if (!creature->IsInCombat() || !creature->IsAlive())
         {
