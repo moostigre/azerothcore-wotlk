@@ -13,6 +13,7 @@
 #include "Random.h"
 #include "ScriptMgr.h"
 #include "Spell.h"
+#include "TemporarySummon.h"
 #include "Unit.h"
 #include "UnitScript.h"
 #include "WorldScript.h"
@@ -36,8 +37,16 @@ struct AbilityState
     bool wasInCombat = false;
 };
 
+struct PhaseState
+{
+    std::vector<bool> triggered;
+    std::vector<uint32> timers;
+    bool wasInCombat = false;
+};
+
 Config config;
 std::unordered_map<ObjectGuid, AbilityState> abilityStates;
+std::unordered_map<ObjectGuid, PhaseState> phaseStates;
 std::unordered_set<uint64> authorizedCasts;
 std::unordered_set<ObjectGuid> healthScaledCreatures;
 
@@ -117,6 +126,50 @@ void ParseCreature(DungeonConfig& dungeon, fkyaml::node const& node)
             dungeon.abilities[entry].push_back(ability);
         }
     }
+
+    if (!node.contains("loot"))
+    {
+        if (!node.contains("phases"))
+            return;
+    }
+
+    if (node.contains("phases"))
+        for (fkyaml::node const& phaseNode : node["phases"])
+        {
+            Phase phase;
+            phase.healthBelow = ReadValue<uint8>(phaseNode, "health_below", 0);
+            phase.once = ReadValue<bool>(phaseNode, "once", true);
+            phase.repeatMs = std::max<uint32>(100, ReadValue<uint32>(phaseNode, "repeat_ms", 1000));
+            if (!phase.healthBelow || phase.healthBelow > 100 || !phaseNode.contains("actions"))
+                throw std::runtime_error("A phase requires health_below from 1 to 100 and actions");
+
+            for (fkyaml::node const& actionNode : phaseNode["actions"])
+            {
+                PhaseAction action;
+                action.target = ParseTarget(ReadValue<std::string>(actionNode, "target", "self"));
+                if (actionNode.contains("cast"))
+                {
+                    action.type = PhaseActionType::Cast;
+                    action.id = actionNode["cast"].get_value<uint32>();
+                }
+                else if (actionNode.contains("summon"))
+                {
+                    action.type = PhaseActionType::Summon;
+                    fkyaml::node const& summon = actionNode["summon"];
+                    action.id = ReadValue<uint32>(summon, "entry", 0);
+                    action.count = std::max<uint32>(1, ReadValue<uint32>(summon, "count", 1));
+                    action.radius = std::max(0.0f, ReadValue<float>(summon, "radius", 5.0f));
+                    action.despawnMs = ReadValue<uint32>(summon, "despawn_ms", 10000);
+                }
+                else
+                    throw std::runtime_error("A phase action requires cast or summon");
+
+                if (!action.id)
+                    throw std::runtime_error("A phase action requires a non-zero spell or creature id");
+                phase.actions.push_back(action);
+            }
+            dungeon.phases[entry].push_back(std::move(phase));
+        }
 
     if (!node.contains("loot"))
         return;
@@ -235,26 +288,6 @@ void LoadConfig()
             if (dungeonNode.contains("creatures"))
                 for (fkyaml::node const& creatureNode : dungeonNode["creatures"])
                     ParseCreature(dungeon, creatureNode);
-
-            if (dungeonNode.contains("baron_rivendare"))
-            {
-                fkyaml::node const& boss = dungeonNode["baron_rivendare"];
-                dungeon.baron.enabled = ReadValue<bool>(boss, "enabled", true);
-                dungeon.baron.skeletonEntry = ReadValue<uint32>(boss, "skeleton_entry", 11197);
-                dungeon.baron.skeletonCount = ReadValue<uint32>(boss, "skeleton_count", 6);
-                dungeon.baron.raiseDeadSpell = ReadValue<uint32>(boss, "raise_dead_spell", 17473);
-                dungeon.baron.enrageSpell = ReadValue<uint32>(boss, "enrage_spell", 8599);
-            }
-
-            if (dungeonNode.contains("baroness_anastari"))
-            {
-                fkyaml::node const& boss = dungeonNode["baroness_anastari"];
-                dungeon.anastari.enabled = ReadValue<bool>(boss, "enabled", true);
-                dungeon.anastari.bansheeEntry = ReadValue<uint32>(boss, "banshee_entry", 10464);
-                dungeon.anastari.bansheeCount = ReadValue<uint32>(boss, "banshee_count", 3);
-                dungeon.anastari.wailSpell = ReadValue<uint32>(boss, "wail_spell", 16565);
-                dungeon.anastari.enrageSpell = ReadValue<uint32>(boss, "enrage_spell", 8599);
-            }
 
             config.dungeons[dungeon.mapId] = std::move(dungeon);
         }
@@ -378,9 +411,78 @@ void UpdateAbilities(Creature* creature, uint32 diff)
     }
 }
 
+void UpdatePhases(Creature* creature, uint32 diff)
+{
+    DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+    auto rules = dungeon->phases.find(creature->GetEntry());
+    if (rules == dungeon->phases.end())
+        return;
+
+    PhaseState& state = phaseStates[creature->GetGUID()];
+    if (!creature->IsInCombat() || !creature->IsAlive())
+    {
+        state = PhaseState();
+        return;
+    }
+
+    if (!state.wasInCombat || state.triggered.size() != rules->second.size())
+    {
+        state.triggered.assign(rules->second.size(), false);
+        state.timers.assign(rules->second.size(), 0);
+        state.wasInCombat = true;
+    }
+
+    for (std::size_t index = 0; index < rules->second.size(); ++index)
+    {
+        Phase const& phase = rules->second[index];
+        if (!creature->HealthBelowPct(phase.healthBelow) || (phase.once && state.triggered[index]))
+            continue;
+
+        if (!phase.once && state.timers[index] > diff)
+        {
+            state.timers[index] -= diff;
+            continue;
+        }
+
+        for (PhaseAction const& action : phase.actions)
+        {
+            if (action.type == PhaseActionType::Cast)
+            {
+                if (Unit* target = SelectAbilityTarget(creature, action.target))
+                {
+                    uint64 key = CastKey(creature, action.id);
+                    authorizedCasts.insert(key);
+                    creature->CastSpell(target, action.id, true);
+                    authorizedCasts.erase(key);
+                }
+                continue;
+            }
+
+            Unit* attackTarget = SelectAbilityTarget(creature, action.target);
+            constexpr float TWO_PI = 6.28318530718f;
+            for (uint32 summonIndex = 0; summonIndex < action.count; ++summonIndex)
+            {
+                float angle = TWO_PI * float(summonIndex) / float(action.count);
+                float x = creature->GetPositionX() + std::cos(angle) * action.radius;
+                float y = creature->GetPositionY() + std::sin(angle) * action.radius;
+                if (TempSummon* summon = creature->SummonCreature(action.id, x, y,
+                    creature->GetPositionZ(), angle, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, action.despawnMs))
+                {
+                    if (attackTarget && attackTarget != creature)
+                        summon->AI()->AttackStart(attackTarget);
+                }
+            }
+        }
+
+        state.triggered[index] = true;
+        state.timers[index] = phase.repeatMs;
+    }
+}
+
 void ResetCreature(ObjectGuid guid)
 {
     abilityStates.erase(guid);
+    phaseStates.erase(guid);
 }
 
 class HeroicDungeonWorldScript final : public WorldScript
@@ -436,6 +538,7 @@ public:
                     creature->AddLootMode(2);
             }
             UpdateAbilities(creature, diff);
+            UpdatePhases(creature, diff);
         }
     }
 

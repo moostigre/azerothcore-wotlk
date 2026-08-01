@@ -65,22 +65,28 @@ struct LootRule
     std::vector<LootItemRule> items;
 };
 
-struct BaronMechanics
+enum class PhaseActionType : uint8
 {
-    bool enabled = false;
-    uint32 skeletonEntry = 11197;
-    uint32 skeletonCount = 6;
-    uint32 raiseDeadSpell = 17473;
-    uint32 enrageSpell = 8599;
+    Cast,
+    Summon
 };
 
-struct AnastariMechanics
+struct PhaseAction
 {
-    bool enabled = false;
-    uint32 bansheeEntry = 10464;
-    uint32 bansheeCount = 3;
-    uint32 wailSpell = 16565;
-    uint32 enrageSpell = 8599;
+    PhaseActionType type = PhaseActionType::Cast;
+    uint32 id = 0;
+    AbilityTarget target = AbilityTarget::Self;
+    uint32 count = 1;
+    float radius = 5.0f;
+    uint32 despawnMs = 10000;
+};
+
+struct Phase
+{
+    uint8 healthBelow = 0;
+    bool once = true;
+    uint32 repeatMs = 1000;
+    std::vector<PhaseAction> actions;
 };
 
 struct DungeonConfig
@@ -96,8 +102,7 @@ struct DungeonConfig
     std::unordered_map<uint32, CreatureModifier> creatureModifiers;
     std::unordered_map<uint32, std::vector<Ability>> abilities;
     std::unordered_map<uint32, LootRule> lootRules;
-    BaronMechanics baron;
-    AnastariMechanics anastari;
+    std::unordered_map<uint32, std::vector<Phase>> phases;
 };
 
 struct Config

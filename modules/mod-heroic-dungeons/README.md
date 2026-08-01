@@ -18,8 +18,7 @@ entering the heroic instance. Normal Stratholme remains unchanged.
 - replacement cooldowns for spells already used by a creature;
 - additional spell IDs with independent initial and repeat cooldowns;
 - victim, random-player, and self targeting;
-- dedicated C++ encounter extensions for mechanics that do not fit a generic
-  spell scheduler.
+- reusable health-threshold phases with cast and summon actions;
 - Heroic-only loot tables in `add` or `replace` mode.
 
 At startup the module parses every enabled dungeon, creates its Heroic
@@ -54,11 +53,12 @@ The active Stratholme YAML configuration:
 - gives Heroic Baroness Anastari additional Banshee mechanics and a guaranteed
   Savage Gladiator Chain (item 11726) drop through Heroic loot mode.
 
-The generic engine lives in `src/heroic_dungeons.cpp`. Boss-specific mechanics
-live in separate files such as `src/boss_baron_rivendare_heroic.cpp`, allowing
-future encounters to add phases, summons, movement, or instance coordination
-without turning the generic configuration format into a scripting language.
+The generic engine lives in `src/heroic_dungeons.cpp`. Phases can run once or
+repeat on a configured timer. Cast actions support victim, random-player, and
+self targets. Summon actions configure the creature entry, count, radius,
+despawn time, and initial attack target. Mechanics that require movement paths
+or instance-wide coordination can still be added as focused C++ extensions.
 
 The distributed YAML ends with a fully commented Ragefire Chasm example that
-documents every generic dungeon, creature, spell, targeting, cooldown, and
-loot option.
+documents every generic dungeon, creature, spell, targeting, cooldown, phase,
+summon, and loot option.

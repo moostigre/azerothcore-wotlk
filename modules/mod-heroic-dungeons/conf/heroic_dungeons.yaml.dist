@@ -42,6 +42,24 @@ dungeons:
               min_count: 1
               max_count: 1
               group_id: 0
+        phases:
+          - health_below: 70
+            once: true
+            repeat_ms: 1000 # Used only when once is false
+            actions:
+              - cast: 16565
+                target: self
+              - summon:
+                  entry: 10464
+                  count: 3
+                  radius: 5.0
+                  despawn_ms: 10000
+                target: victim
+          - health_below: 35
+            once: true
+            actions:
+              - cast: 8599
+                target: self
 
       - entry: 10440 # Baron Rivendare
         health: 4.0
@@ -63,6 +81,23 @@ dungeons:
             cooldown_max_ms: 18000
             target: random_player
             replace_original: false
+        phases:
+          - health_below: 70
+            once: true
+            actions:
+              - cast: 17473
+                target: self
+              - summon:
+                  entry: 11197
+                  count: 6
+                  radius: 6.0
+                  despawn_ms: 10000
+                target: victim
+          - health_below: 35
+            once: true
+            actions:
+              - cast: 8599
+                target: self
 
       - entry: 10811 # Magistrate Barthilas
         health: 3.5
@@ -76,20 +111,6 @@ dungeons:
             cooldown_max_ms: 12000
             target: random_player
             replace_original: true
-
-    baron_rivendare:
-      enabled: true
-      skeleton_entry: 11197
-      skeleton_count: 6
-      raise_dead_spell: 17473
-      enrage_spell: 8599
-
-    baroness_anastari:
-      enabled: true
-      banshee_entry: 10464
-      banshee_count: 3
-      wail_spell: 16565
-      enrage_spell: 8599
 
 # Complete Ragefire Chasm example (disabled/commented).
 # Remove one leading "# " from every line to enable and edit it. This example
@@ -127,6 +148,19 @@ dungeons:
 #            cooldown_max_ms: 16000
 #            target: random_player
 #            replace_original: false
+#        phases:
+#          - health_below: 70  # Activate below this health percentage
+#            once: true        # false repeats according to repeat_ms
+#            repeat_ms: 10000
+#            actions:
+#              - cast: 8599    # Spell ID
+#                target: self  # victim, random_player, or self
+#              - summon:
+#                  entry: 11319
+#                  count: 4
+#                  radius: 6.0
+#                  despawn_ms: 15000
+#                target: victim # Summons immediately attack this target
 #        loot:
 #          mode: replace        # add keeps normal loot; replace uses YAML only
 #          items:
@@ -135,6 +169,3 @@ dungeons:
 #              min_count: 1
 #              max_count: 1
 #              group_id: 0
-#
-# Dedicated baron_rivendare and baroness_anastari blocks are intentionally
-# Stratholme-specific C++ encounter extensions, not generic YAML options.
