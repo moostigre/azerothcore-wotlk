@@ -123,7 +123,8 @@ dungeons:
     reset_seconds: 86400
     minimum_level: 15
     maximum_level: 20
-    heroic_entrance_triggers: [2230]
+    # RFC difficulty is selected explicitly through the client UI.
+    heroic_entrance_triggers: []
 
     modifiers:
       health: 1.35
