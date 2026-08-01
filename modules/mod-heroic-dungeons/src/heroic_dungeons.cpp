@@ -5,6 +5,7 @@
 #include "Config.h"
 #include "Creature.h"
 #include "CreatureAI.h"
+#include "DatabaseEnv.h"
 #include "DBCStores.h"
 #include "DBCStructure.h"
 #include "Log.h"
@@ -16,10 +17,12 @@
 #include "UnitScript.h"
 #include "WorldScript.h"
 
+#include <fkYAML/node.hpp>
+
 #include <algorithm>
-#include <charconv>
 #include <cmath>
-#include <sstream>
+#include <fstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 
@@ -38,36 +41,21 @@ std::unordered_map<ObjectGuid, AbilityState> abilityStates;
 std::unordered_set<uint64> authorizedCasts;
 std::unordered_set<ObjectGuid> healthScaledCreatures;
 
-std::vector<std::string> Split(std::string const& value, char delimiter)
+template <typename T>
+T ReadValue(fkyaml::node const& node, char const* key, T defaultValue)
 {
-    std::vector<std::string> parts;
-    std::stringstream stream(value);
-    std::string part;
-    while (std::getline(stream, part, delimiter))
-        parts.push_back(part);
-    return parts;
+    if (!node.is_mapping() || !node.contains(key))
+        return defaultValue;
+    return node[key].get_value<T>();
 }
 
-bool ParseUInt(std::string const& value, uint32& result)
+AbilityTarget ParseTarget(std::string const& target)
 {
-    auto const* begin = value.data();
-    auto const* end = begin + value.size();
-    auto parsed = std::from_chars(begin, end, result);
-    return parsed.ec == std::errc() && parsed.ptr == end;
-}
-
-bool ParseFloat(std::string const& value, float& result)
-{
-    try
-    {
-        std::size_t consumed = 0;
-        result = std::stof(value, &consumed);
-        return consumed == value.size() && std::isfinite(result);
-    }
-    catch (...)
-    {
-        return false;
-    }
+    if (target == "random_player")
+        return AbilityTarget::RandomPlayer;
+    if (target == "self")
+        return AbilityTarget::Self;
+    return AbilityTarget::Victim;
 }
 
 uint64 CastKey(Creature const* creature, uint32 spellId)
@@ -98,51 +86,83 @@ void ApplyHealthScaling(Creature* creature)
     healthScaledCreatures.insert(creature->GetGUID());
 }
 
-void ParseCreatureModifiers(std::string const& value)
+void ParseCreature(DungeonConfig& dungeon, fkyaml::node const& node)
 {
-    for (std::string const& record : Split(value, ';'))
+    uint32 entry = ReadValue<uint32>(node, "entry", 0);
+    if (!entry)
+        throw std::runtime_error("A creature rule is missing a non-zero entry");
+
+    CreatureModifier modifier;
+    modifier.health = ReadValue<float>(node, "health", 0.0f);
+    modifier.meleeDamage = ReadValue<float>(node, "melee_damage", 0.0f);
+    if (modifier.health > 0.0f || modifier.meleeDamage > 0.0f)
+        dungeon.creatureModifiers[entry] = modifier;
+
+    if (node.contains("spells"))
     {
-        if (record.empty())
-            continue;
-
-        std::vector<std::string> fields = Split(record, ':');
-        uint32 entry = 0;
-        CreatureModifier modifier;
-        if (fields.size() != 3 || !ParseUInt(fields[0], entry) ||
-            !ParseFloat(fields[1], modifier.health) || !ParseFloat(fields[2], modifier.meleeDamage))
+        for (fkyaml::node const& spellNode : node["spells"])
         {
-            LOG_ERROR("module.heroic-dungeons", "Invalid creature modifier '{}'", record);
-            continue;
+            Ability ability;
+            ability.creatureEntry = entry;
+            ability.spellId = ReadValue<uint32>(spellNode, "id", 0);
+            ability.damage = ReadValue<float>(spellNode, "damage", 0.0f);
+            ability.initialMin = ReadValue<uint32>(spellNode, "initial_min_ms", 0);
+            ability.initialMax = ReadValue<uint32>(spellNode, "initial_max_ms", ability.initialMin);
+            ability.cooldownMin = ReadValue<uint32>(spellNode, "cooldown_min_ms", 1000);
+            ability.cooldownMax = ReadValue<uint32>(spellNode, "cooldown_max_ms", ability.cooldownMin);
+            ability.target = ParseTarget(ReadValue<std::string>(spellNode, "target", "victim"));
+            ability.replaceOriginal = ReadValue<bool>(spellNode, "replace_original", false);
+            if (!ability.spellId)
+                throw std::runtime_error("A spell rule is missing a non-zero id");
+            dungeon.abilities[entry].push_back(ability);
         }
-
-        config.creatureModifiers[entry] = modifier;
     }
+
+    if (!node.contains("loot"))
+        return;
+
+    fkyaml::node const& lootNode = node["loot"];
+    LootRule rule;
+    rule.mode = ReadValue<std::string>(lootNode, "mode", "add") == "replace" ?
+        LootOverrideMode::Replace : LootOverrideMode::Add;
+    if (lootNode.contains("items"))
+        for (fkyaml::node const& itemNode : lootNode["items"])
+        {
+            LootItemRule item;
+            item.itemId = ReadValue<uint32>(itemNode, "id", 0);
+            item.chance = std::clamp(ReadValue<float>(itemNode, "chance", 0.0f), 0.0f, 100.0f);
+            item.minCount = ReadValue<uint8>(itemNode, "min_count", 1);
+            item.maxCount = ReadValue<uint8>(itemNode, "max_count", item.minCount);
+            item.groupId = ReadValue<uint8>(itemNode, "group_id", 0);
+            if (!item.itemId || !item.chance)
+                throw std::runtime_error("A loot rule requires non-zero id and chance");
+            rule.items.push_back(item);
+        }
+    dungeon.lootRules[entry] = std::move(rule);
 }
 
-void ParseAbilities(std::string const& value)
+void SynchronizeYamlDatabase()
 {
-    for (std::string const& record : Split(value, ';'))
+    WorldDatabase.DirectExecute(
+        "DELETE FROM `creature_loot_template` WHERE `Comment` LIKE 'Heroic YAML:%' OR "
+        "`Comment` = 'Heroic Baroness Anastari - Savage Gladiator Chain'");
+
+    for (auto const& [mapId, dungeon] : config.dungeons)
     {
-        if (record.empty())
+        if (!dungeon.enabled)
             continue;
 
-        std::vector<std::string> fields = Split(record, ':');
-        Ability ability;
-        uint32 target = 0;
-        uint32 replaceOriginal = 0;
-        if (fields.size() != 9 || !ParseUInt(fields[0], ability.creatureEntry) ||
-            !ParseUInt(fields[1], ability.spellId) || !ParseFloat(fields[2], ability.damage) ||
-            !ParseUInt(fields[3], ability.initialMin) || !ParseUInt(fields[4], ability.initialMax) ||
-            !ParseUInt(fields[5], ability.cooldownMin) || !ParseUInt(fields[6], ability.cooldownMax) ||
-            !ParseUInt(fields[7], target) || !ParseUInt(fields[8], replaceOriginal) || target > 2)
-        {
-            LOG_ERROR("module.heroic-dungeons", "Invalid heroic ability '{}'", record);
-            continue;
-        }
+        WorldDatabase.DirectExecute("UPDATE `creature` SET `spawnMask` = `spawnMask` | 2 WHERE `map` = {}", mapId);
+        WorldDatabase.DirectExecute("UPDATE `gameobject` SET `spawnMask` = `spawnMask` | 2 WHERE `map` = {}", mapId);
 
-        ability.target = static_cast<AbilityTarget>(target);
-        ability.replaceOriginal = replaceOriginal != 0;
-        config.abilities[ability.creatureEntry].push_back(ability);
+        for (auto const& [creatureEntry, loot] : dungeon.lootRules)
+            for (LootItemRule const& item : loot.items)
+                WorldDatabase.DirectExecute(
+                    "INSERT INTO `creature_loot_template` "
+                    "(`Entry`,`Item`,`Reference`,`Chance`,`QuestRequired`,`LootMode`,`GroupId`,`MinCount`,`MaxCount`,`Comment`) "
+                    "VALUES ({},{},0,{},0,2,{},{},{},'Heroic YAML: map {} creature {}')",
+                    creatureEntry, item.itemId, item.chance, item.groupId, item.minCount, item.maxCount,
+                    mapId, creatureEntry);
     }
 }
 
@@ -166,76 +186,124 @@ Config const& GetConfig()
     return config;
 }
 
+DungeonConfig const* GetDungeonConfig(uint32 mapId)
+{
+    auto itr = config.dungeons.find(mapId);
+    return itr == config.dungeons.end() ? nullptr : &itr->second;
+}
+
 void LoadConfig()
 {
     config = Config();
     config.enabled = sConfigMgr->GetOption<bool>("HeroicDungeons.Enable", true);
-    config.stratholmeEnabled = sConfigMgr->GetOption<bool>("HeroicDungeons.Stratholme.Enable", true);
-    config.stratholmeResetSeconds =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.ResetSeconds", 86400);
-    config.health = std::max(0.01f,
-        sConfigMgr->GetOption<float>("HeroicDungeons.Stratholme.HealthMultiplier", 3.0f));
-    config.meleeDamage = std::max(0.0f,
-        sConfigMgr->GetOption<float>("HeroicDungeons.Stratholme.MeleeDamageMultiplier", 1.6f));
-    config.spellDamage = std::max(0.0f,
-        sConfigMgr->GetOption<float>("HeroicDungeons.Stratholme.SpellDamageMultiplier", 1.4f));
-    config.serviceEntranceForcesHeroic = sConfigMgr->GetOption<bool>(
-        "HeroicDungeons.Stratholme.ServiceEntranceForcesHeroic", true);
-    config.baronEnabled = sConfigMgr->GetOption<bool>("HeroicDungeons.Stratholme.Baron.Enable", true);
-    config.baronSkeletonEntry =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Baron.SkeletonEntry", 11197);
-    config.baronSkeletonCount =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Baron.SkeletonCount", 6);
-    config.baronRaiseDeadSpell =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Baron.RaiseDeadSpell", 17473);
-    config.baronEnrageSpell =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Baron.EnrageSpell", 8599);
-    config.anastariEnabled = sConfigMgr->GetOption<bool>("HeroicDungeons.Stratholme.Anastari.Enable", true);
-    config.anastariBansheeEntry =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Anastari.BansheeEntry", 10464);
-    config.anastariBansheeCount =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Anastari.BansheeCount", 3);
-    config.anastariWailSpell =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Anastari.WailSpell", 16565);
-    config.anastariEnrageSpell =
-        sConfigMgr->GetOption<uint32>("HeroicDungeons.Stratholme.Anastari.EnrageSpell", 8599);
+    config.yamlPath = sConfigMgr->GetOption<std::string>(
+        "HeroicDungeons.YamlPath", "modules/heroic_dungeons.yaml");
 
-    ParseCreatureModifiers(sConfigMgr->GetOption<std::string>(
-        "HeroicDungeons.Stratholme.CreatureModifiers", ""));
-    ParseAbilities(sConfigMgr->GetOption<std::string>("HeroicDungeons.Stratholme.Abilities", ""));
+    if (!config.enabled)
+        return;
 
-    LOG_INFO("module.heroic-dungeons",
-        "Loaded Heroic Stratholme: enabled={}, {} creature overrides, {} ability sets",
-        config.enabled && config.stratholmeEnabled, config.creatureModifiers.size(), config.abilities.size());
+    try
+    {
+        std::ifstream input(config.yamlPath);
+        if (!input)
+            throw std::runtime_error("Unable to open " + config.yamlPath);
+
+        fkyaml::node root = fkyaml::node::deserialize(input);
+        if (!root.contains("dungeons") || !root["dungeons"].is_sequence())
+            throw std::runtime_error("The YAML root requires a dungeons sequence");
+
+        for (fkyaml::node const& dungeonNode : root["dungeons"])
+        {
+            DungeonConfig dungeon;
+            dungeon.name = ReadValue<std::string>(dungeonNode, "name", "unnamed");
+            dungeon.mapId = ReadValue<uint32>(dungeonNode, "map", 0);
+            dungeon.enabled = ReadValue<bool>(dungeonNode, "enabled", true);
+            dungeon.resetSeconds = ReadValue<uint32>(dungeonNode, "reset_seconds", 86400);
+            dungeon.serviceEntranceForcesHeroic =
+                ReadValue<bool>(dungeonNode, "service_entrance_forces_heroic", false);
+            if (!dungeon.mapId)
+                throw std::runtime_error("Dungeon '" + dungeon.name + "' has an invalid map id");
+
+            if (dungeonNode.contains("modifiers"))
+            {
+                fkyaml::node const& modifiers = dungeonNode["modifiers"];
+                dungeon.health = std::max(0.01f, ReadValue<float>(modifiers, "health", 1.0f));
+                dungeon.meleeDamage = std::max(0.0f, ReadValue<float>(modifiers, "melee_damage", 1.0f));
+                dungeon.spellDamage = std::max(0.0f, ReadValue<float>(modifiers, "spell_damage", 1.0f));
+            }
+
+            if (dungeonNode.contains("creatures"))
+                for (fkyaml::node const& creatureNode : dungeonNode["creatures"])
+                    ParseCreature(dungeon, creatureNode);
+
+            if (dungeonNode.contains("baron_rivendare"))
+            {
+                fkyaml::node const& boss = dungeonNode["baron_rivendare"];
+                dungeon.baron.enabled = ReadValue<bool>(boss, "enabled", true);
+                dungeon.baron.skeletonEntry = ReadValue<uint32>(boss, "skeleton_entry", 11197);
+                dungeon.baron.skeletonCount = ReadValue<uint32>(boss, "skeleton_count", 6);
+                dungeon.baron.raiseDeadSpell = ReadValue<uint32>(boss, "raise_dead_spell", 17473);
+                dungeon.baron.enrageSpell = ReadValue<uint32>(boss, "enrage_spell", 8599);
+            }
+
+            if (dungeonNode.contains("baroness_anastari"))
+            {
+                fkyaml::node const& boss = dungeonNode["baroness_anastari"];
+                dungeon.anastari.enabled = ReadValue<bool>(boss, "enabled", true);
+                dungeon.anastari.bansheeEntry = ReadValue<uint32>(boss, "banshee_entry", 10464);
+                dungeon.anastari.bansheeCount = ReadValue<uint32>(boss, "banshee_count", 3);
+                dungeon.anastari.wailSpell = ReadValue<uint32>(boss, "wail_spell", 16565);
+                dungeon.anastari.enrageSpell = ReadValue<uint32>(boss, "enrage_spell", 8599);
+            }
+
+            config.dungeons[dungeon.mapId] = std::move(dungeon);
+        }
+
+        SynchronizeYamlDatabase();
+        LOG_INFO("module.heroic-dungeons", "Loaded {} heroic dungeon definitions from '{}'",
+            config.dungeons.size(), config.yamlPath);
+    }
+    catch (std::exception const& exception)
+    {
+        config.dungeons.clear();
+        LOG_ERROR("module.heroic-dungeons", "Failed to load heroic dungeon YAML '{}': {}",
+            config.yamlPath, exception.what());
+    }
 }
 
 bool IsEnabledFor(Creature const* creature)
 {
-    return creature && config.enabled && config.stratholmeEnabled && creature->GetMap() &&
-        creature->GetMapId() == MAP_STRATHOLME && creature->GetMap()->IsHeroic();
+    if (!creature || !config.enabled || !creature->GetMap() || !creature->GetMap()->IsHeroic())
+        return false;
+    DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+    return dungeon && dungeon->enabled;
 }
 
 float GetHealthMultiplier(Creature const* creature)
 {
-    auto itr = config.creatureModifiers.find(creature->GetEntry());
-    return itr != config.creatureModifiers.end() && itr->second.health > 0.0f ? itr->second.health : config.health;
+    DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+    auto itr = dungeon->creatureModifiers.find(creature->GetEntry());
+    return itr != dungeon->creatureModifiers.end() && itr->second.health > 0.0f ?
+        itr->second.health : dungeon->health;
 }
 
 float GetMeleeDamageMultiplier(Creature const* creature)
 {
-    auto itr = config.creatureModifiers.find(creature->GetEntry());
-    return itr != config.creatureModifiers.end() && itr->second.meleeDamage > 0.0f ?
-        itr->second.meleeDamage : config.meleeDamage;
+    DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+    auto itr = dungeon->creatureModifiers.find(creature->GetEntry());
+    return itr != dungeon->creatureModifiers.end() && itr->second.meleeDamage > 0.0f ?
+        itr->second.meleeDamage : dungeon->meleeDamage;
 }
 
 float GetSpellDamageMultiplier(Creature const* creature, uint32 spellId)
 {
-    auto itr = config.abilities.find(creature->GetEntry());
-    if (itr != config.abilities.end())
+    DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+    auto itr = dungeon->abilities.find(creature->GetEntry());
+    if (itr != dungeon->abilities.end())
         for (Ability const& ability : itr->second)
             if (ability.spellId == spellId && ability.damage > 0.0f)
                 return ability.damage;
-    return config.spellDamage;
+    return dungeon->spellDamage;
 }
 
 bool ShouldReplaceOriginalCast(Creature const* creature, uint32 spellId)
@@ -243,8 +311,9 @@ bool ShouldReplaceOriginalCast(Creature const* creature, uint32 spellId)
     if (!IsEnabledFor(creature))
         return false;
 
-    auto itr = config.abilities.find(creature->GetEntry());
-    if (itr != config.abilities.end())
+    DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+    auto itr = dungeon->abilities.find(creature->GetEntry());
+    if (itr != dungeon->abilities.end())
         for (Ability const& ability : itr->second)
             if (ability.spellId == spellId && ability.replaceOriginal)
                 return true;
@@ -261,8 +330,9 @@ bool IsAuthorizedHeroicCast(Spell const* spell)
 
 void UpdateAbilities(Creature* creature, uint32 diff)
 {
-    auto rules = config.abilities.find(creature->GetEntry());
-    if (rules == config.abilities.end())
+    DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+    auto rules = dungeon->abilities.find(creature->GetEntry());
+    if (rules == dungeon->abilities.end())
         return;
 
     AbilityState& state = abilityStates[creature->GetGUID()];
@@ -326,11 +396,13 @@ public:
 
     void OnBeforeWorldInitialized() override
     {
-        if (config.enabled && config.stratholmeEnabled)
-        {
-            sMapDifficultyMap[MAKE_PAIR32(MAP_STRATHOLME, DUNGEON_DIFFICULTY_HEROIC)] =
-                MapDifficulty(config.stratholmeResetSeconds, 5, false);
-        }
+        if (!config.enabled)
+            return;
+
+        for (auto const& [mapId, dungeon] : config.dungeons)
+            if (dungeon.enabled)
+                sMapDifficultyMap[MAKE_PAIR32(mapId, DUNGEON_DIFFICULTY_HEROIC)] =
+                    MapDifficulty(dungeon.resetSeconds, 5, false);
     }
 };
 
@@ -353,6 +425,16 @@ public:
         {
             if (!healthScaledCreatures.contains(creature->GetGUID()))
                 ApplyHealthScaling(creature);
+
+            DungeonConfig const* dungeon = GetDungeonConfig(creature->GetMapId());
+            auto loot = dungeon->lootRules.find(creature->GetEntry());
+            if (loot != dungeon->lootRules.end())
+            {
+                if (loot->second.mode == LootOverrideMode::Replace)
+                    creature->SetLootMode(2);
+                else
+                    creature->AddLootMode(2);
+            }
             UpdateAbilities(creature, diff);
         }
     }

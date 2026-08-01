@@ -14,8 +14,10 @@ public:
 
     bool OnTrigger(Player* player, AreaTrigger const* /*trigger*/) override
     {
-        HeroicDungeons::Config const& config = HeroicDungeons::GetConfig();
-        if (!config.enabled || !config.stratholmeEnabled || !config.serviceEntranceForcesHeroic)
+        HeroicDungeons::DungeonConfig const* dungeon =
+            HeroicDungeons::GetDungeonConfig(HeroicDungeons::MAP_STRATHOLME);
+        if (!HeroicDungeons::GetConfig().enabled || !dungeon || !dungeon->enabled ||
+            !dungeon->serviceEntranceForcesHeroic)
             return false;
 
         if (Group* group = player->GetGroup())

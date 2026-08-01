@@ -28,8 +28,9 @@ public:
 
     void OnAllCreatureUpdate(Creature* creature, uint32 /*diff*/) override
     {
-        HeroicDungeons::Config const& config = HeroicDungeons::GetConfig();
-        if (!config.baronEnabled || creature->GetEntry() != HeroicDungeons::NPC_BARON_RIVENDARE ||
+        HeroicDungeons::DungeonConfig const* dungeon = HeroicDungeons::GetDungeonConfig(creature->GetMapId());
+        if (!dungeon || !dungeon->baron.enabled ||
+            creature->GetEntry() != HeroicDungeons::NPC_BARON_RIVENDARE ||
             !HeroicDungeons::IsEnabledFor(creature))
         {
             return;
@@ -45,15 +46,15 @@ public:
         if (!state.skeletonWave && creature->HealthBelowPct(70))
         {
             state.skeletonWave = true;
-            creature->CastSpell(creature, config.baronRaiseDeadSpell, true);
+            creature->CastSpell(creature, dungeon->baron.raiseDeadSpell, true);
 
             constexpr float TWO_PI = 6.28318530718f;
-            for (uint32 index = 0; index < config.baronSkeletonCount; ++index)
+            for (uint32 index = 0; index < dungeon->baron.skeletonCount; ++index)
             {
-                float angle = TWO_PI * float(index) / float(std::max<uint32>(1, config.baronSkeletonCount));
+                float angle = TWO_PI * float(index) / float(std::max<uint32>(1, dungeon->baron.skeletonCount));
                 float x = creature->GetPositionX() + std::cos(angle) * 6.0f;
                 float y = creature->GetPositionY() + std::sin(angle) * 6.0f;
-                if (TempSummon* summon = creature->SummonCreature(config.baronSkeletonEntry, x, y,
+                if (TempSummon* summon = creature->SummonCreature(dungeon->baron.skeletonEntry, x, y,
                     creature->GetPositionZ(), angle, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 10000))
                 {
                     if (Unit* victim = creature->GetVictim())
@@ -65,7 +66,7 @@ public:
         if (!state.enraged && creature->HealthBelowPct(35))
         {
             state.enraged = true;
-            creature->CastSpell(creature, config.baronEnrageSpell, true);
+            creature->CastSpell(creature, dungeon->baron.enrageSpell, true);
         }
     }
 

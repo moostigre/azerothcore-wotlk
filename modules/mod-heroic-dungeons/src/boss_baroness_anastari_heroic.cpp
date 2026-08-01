@@ -26,16 +26,13 @@ public:
 
     void OnAllCreatureUpdate(Creature* creature, uint32 /*diff*/) override
     {
-        HeroicDungeons::Config const& config = HeroicDungeons::GetConfig();
-        if (!config.anastariEnabled || creature->GetEntry() != HeroicDungeons::NPC_BARONESS_ANASTARI ||
+        HeroicDungeons::DungeonConfig const* dungeon = HeroicDungeons::GetDungeonConfig(creature->GetMapId());
+        if (!dungeon || !dungeon->anastari.enabled ||
+            creature->GetEntry() != HeroicDungeons::NPC_BARONESS_ANASTARI ||
             !HeroicDungeons::IsEnabledFor(creature))
         {
             return;
         }
-
-        // Creature loot defaults to mode 1 even on Heroic dungeon maps. Enable
-        // the module's mode 2 rows only after the map difficulty is verified.
-        creature->AddLootMode(2);
 
         AnastariState& state = anastariStates[creature->GetGUID()];
         if (!creature->IsInCombat() || !creature->IsAlive())
@@ -47,15 +44,15 @@ public:
         if (!state.bansheeWave && creature->HealthBelowPct(70))
         {
             state.bansheeWave = true;
-            creature->CastSpell(creature, config.anastariWailSpell, true);
+            creature->CastSpell(creature, dungeon->anastari.wailSpell, true);
 
             constexpr float TWO_PI = 6.28318530718f;
-            for (uint32 index = 0; index < config.anastariBansheeCount; ++index)
+            for (uint32 index = 0; index < dungeon->anastari.bansheeCount; ++index)
             {
-                float angle = TWO_PI * float(index) / float(std::max<uint32>(1, config.anastariBansheeCount));
+                float angle = TWO_PI * float(index) / float(std::max<uint32>(1, dungeon->anastari.bansheeCount));
                 float x = creature->GetPositionX() + std::cos(angle) * 5.0f;
                 float y = creature->GetPositionY() + std::sin(angle) * 5.0f;
-                if (TempSummon* summon = creature->SummonCreature(config.anastariBansheeEntry, x, y,
+                if (TempSummon* summon = creature->SummonCreature(dungeon->anastari.bansheeEntry, x, y,
                     creature->GetPositionZ(), angle, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 10000))
                 {
                     if (Unit* victim = creature->GetVictim())
@@ -67,7 +64,7 @@ public:
         if (!state.enraged && creature->HealthBelowPct(35))
         {
             state.enraged = true;
-            creature->CastSpell(creature, config.anastariEnrageSpell, true);
+            creature->CastSpell(creature, dungeon->anastari.enrageSpell, true);
         }
     }
 

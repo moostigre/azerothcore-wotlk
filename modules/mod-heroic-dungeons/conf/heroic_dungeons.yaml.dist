@@ -1,0 +1,140 @@
+# Heroic dungeon rules. This file is read at worldserver startup.
+# Multipliers and spell schedules are runtime rules. Spawn masks and Heroic
+# loot rows are synchronized to the world database before templates load.
+dungeons:
+  - name: stratholme
+    map: 329
+    enabled: true
+    reset_seconds: 86400
+    service_entrance_forces_heroic: true
+
+    modifiers:
+      health: 3.0
+      melee_damage: 1.6
+      spell_damage: 1.4
+
+    creatures:
+      - entry: 10436 # Baroness Anastari
+        health: 4.0
+        melee_damage: 1.7
+        spells:
+          - id: 16565
+            damage: 1.7
+            initial_min_ms: 2000
+            initial_max_ms: 3000
+            cooldown_min_ms: 6000
+            cooldown_max_ms: 8000
+            target: random_player
+            replace_original: true
+          - id: 15245
+            damage: 1.5
+            initial_min_ms: 8000
+            initial_max_ms: 10000
+            cooldown_min_ms: 14000
+            cooldown_max_ms: 18000
+            target: random_player
+            replace_original: false
+        loot:
+          mode: add
+          items:
+            - id: 11726 # Savage Gladiator Chain
+              chance: 100.0
+              min_count: 1
+              max_count: 1
+              group_id: 0
+
+      - entry: 10440 # Baron Rivendare
+        health: 4.0
+        melee_damage: 1.8
+        spells:
+          - id: 17393
+            damage: 1.8
+            initial_min_ms: 3000
+            initial_max_ms: 5000
+            cooldown_min_ms: 7000
+            cooldown_max_ms: 9000
+            target: random_player
+            replace_original: true
+          - id: 15245
+            damage: 1.5
+            initial_min_ms: 8000
+            initial_max_ms: 10000
+            cooldown_min_ms: 14000
+            cooldown_max_ms: 18000
+            target: random_player
+            replace_original: false
+
+      - entry: 10811 # Magistrate Barthilas
+        health: 3.5
+        melee_damage: 1.6
+        spells:
+          - id: 17293
+            damage: 1.7
+            initial_min_ms: 3000
+            initial_max_ms: 5000
+            cooldown_min_ms: 9000
+            cooldown_max_ms: 12000
+            target: random_player
+            replace_original: true
+
+    baron_rivendare:
+      enabled: true
+      skeleton_entry: 11197
+      skeleton_count: 6
+      raise_dead_spell: 17473
+      enrage_spell: 8599
+
+    baroness_anastari:
+      enabled: true
+      banshee_entry: 10464
+      banshee_count: 3
+      wail_spell: 16565
+      enrage_spell: 8599
+
+# Complete Ragefire Chasm example (disabled/commented).
+# Remove one leading "# " from every line to enable and edit it. This example
+# demonstrates every generic option supported for any dungeon and creature.
+#
+#  - name: ragefire_chasm
+#    map: 389
+#    enabled: true
+#    reset_seconds: 86400
+#    service_entrance_forces_heroic: false # Stratholme service entrance only
+#
+#    modifiers:
+#      health: 3.0              # Overall creature HP multiplier
+#      melee_damage: 1.5        # Overall white/melee damage multiplier
+#      spell_damage: 1.4        # Default spell damage multiplier
+#
+#    creatures:
+#      - entry: 11520           # Creature template ID
+#        health: 5.0            # Optional; omit or use 0 to inherit overall
+#        melee_damage: 2.0      # Optional; omit or use 0 to inherit overall
+#        spells:
+#          - id: 9532           # Existing or additional spell ID
+#            damage: 1.8        # Optional; 0 inherits overall spell damage
+#            initial_min_ms: 2000
+#            initial_max_ms: 4000
+#            cooldown_min_ms: 7000
+#            cooldown_max_ms: 10000
+#            target: victim     # victim, random_player, or self
+#            replace_original: true # Block ordinary cast and use this schedule
+#          - id: 11970          # Example additional ability
+#            damage: 1.5
+#            initial_min_ms: 5000
+#            initial_max_ms: 8000
+#            cooldown_min_ms: 12000
+#            cooldown_max_ms: 16000
+#            target: random_player
+#            replace_original: false
+#        loot:
+#          mode: replace        # add keeps normal loot; replace uses YAML only
+#          items:
+#            - id: 11726
+#              chance: 100.0    # 0.01 through 100
+#              min_count: 1
+#              max_count: 1
+#              group_id: 0
+#
+# Dedicated baron_rivendare and baroness_anastari blocks are intentionally
+# Stratholme-specific C++ encounter extensions, not generic YAML options.

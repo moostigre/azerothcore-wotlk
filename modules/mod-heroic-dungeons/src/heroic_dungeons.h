@@ -5,6 +5,7 @@
 #include "ObjectGuid.h"
 
 #include <unordered_map>
+#include <string>
 #include <vector>
 
 class Creature;
@@ -43,30 +44,71 @@ struct Ability
     bool replaceOriginal = false;
 };
 
+enum class LootOverrideMode : uint8
+{
+    Add,
+    Replace
+};
+
+struct LootItemRule
+{
+    uint32 itemId = 0;
+    float chance = 0.0f;
+    uint8 minCount = 1;
+    uint8 maxCount = 1;
+    uint8 groupId = 0;
+};
+
+struct LootRule
+{
+    LootOverrideMode mode = LootOverrideMode::Add;
+    std::vector<LootItemRule> items;
+};
+
+struct BaronMechanics
+{
+    bool enabled = false;
+    uint32 skeletonEntry = 11197;
+    uint32 skeletonCount = 6;
+    uint32 raiseDeadSpell = 17473;
+    uint32 enrageSpell = 8599;
+};
+
+struct AnastariMechanics
+{
+    bool enabled = false;
+    uint32 bansheeEntry = 10464;
+    uint32 bansheeCount = 3;
+    uint32 wailSpell = 16565;
+    uint32 enrageSpell = 8599;
+};
+
+struct DungeonConfig
+{
+    std::string name;
+    uint32 mapId = 0;
+    bool enabled = true;
+    uint32 resetSeconds = 86400;
+    float health = 1.0f;
+    float meleeDamage = 1.0f;
+    float spellDamage = 1.0f;
+    bool serviceEntranceForcesHeroic = false;
+    std::unordered_map<uint32, CreatureModifier> creatureModifiers;
+    std::unordered_map<uint32, std::vector<Ability>> abilities;
+    std::unordered_map<uint32, LootRule> lootRules;
+    BaronMechanics baron;
+    AnastariMechanics anastari;
+};
+
 struct Config
 {
     bool enabled = true;
-    bool stratholmeEnabled = true;
-    uint32 stratholmeResetSeconds = 86400;
-    float health = 3.0f;
-    float meleeDamage = 1.6f;
-    float spellDamage = 1.4f;
-    bool serviceEntranceForcesHeroic = true;
-    bool baronEnabled = true;
-    uint32 baronSkeletonEntry = 11197;
-    uint32 baronSkeletonCount = 6;
-    uint32 baronRaiseDeadSpell = 17473;
-    uint32 baronEnrageSpell = 8599;
-    bool anastariEnabled = true;
-    uint32 anastariBansheeEntry = 10464;
-    uint32 anastariBansheeCount = 3;
-    uint32 anastariWailSpell = 16565;
-    uint32 anastariEnrageSpell = 8599;
-    std::unordered_map<uint32, CreatureModifier> creatureModifiers;
-    std::unordered_map<uint32, std::vector<Ability>> abilities;
+    std::string yamlPath = "modules/heroic_dungeons.yaml";
+    std::unordered_map<uint32, DungeonConfig> dungeons;
 };
 
 Config const& GetConfig();
+DungeonConfig const* GetDungeonConfig(uint32 mapId);
 void LoadConfig();
 bool IsEnabledFor(Creature const* creature);
 float GetHealthMultiplier(Creature const* creature);
