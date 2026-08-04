@@ -1,7 +1,7 @@
 ## Interface: 30300
-## Title: Cloud9 Heroic UI
+## Title: SWP Heroic UI
 ## Notes: Shows the standard dungeon difficulty menu below level 65.
-## Author: ToCloud9
+## Author: SWP
 ## Version: 1.0.0
 
-Cloud9HeroicUI.lua
+SWPHeroicUI.lua

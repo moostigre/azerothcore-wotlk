@@ -3,7 +3,7 @@
 ## Low-level client difficulty menu
 
 WoW 3.3.5a hides the Dungeon Difficulty submenu below level 65. The optional
-client addon in [`client/Cloud9HeroicUI`](client/Cloud9HeroicUI) restores the
+client addon in [`client/SWPHeroicUI`](client/SWPHeroicUI) restores the
 stock menu so players can select **5 Player (Heroic)** for configured
 low-level heroic dungeons. Installation instructions are in
 [`client/README.md`](client/README.md).
