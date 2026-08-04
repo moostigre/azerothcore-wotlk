@@ -40,7 +40,7 @@ public:
 };
 }
 
-void AddSC_stratholme_heroic_entrance()
+void AddSC_heroic_dungeon_entrance()
 {
     new HeroicDungeonEntrance();
 }

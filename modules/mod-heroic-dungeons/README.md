@@ -71,6 +71,9 @@ repeat on a configured timer. Cast actions support victim, random-player, and
 self targets. Summon actions configure the creature entry, count, radius,
 despawn time, and initial attack target. Mechanics that require movement paths
 or instance-wide coordination can still be added as focused C++ extensions.
+Generic YAML-configured entrance triggers are handled by
+`src/heroic_dungeon_entrance.cpp`; no dungeon-specific entrance source or SQL
+bootstrap is required.
 
 The distributed YAML includes an enabled, moderately tuned level 15-20
 Ragefire Chasm demonstration. Its four bosses show spell replacement, summons,

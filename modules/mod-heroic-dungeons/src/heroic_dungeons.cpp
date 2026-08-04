@@ -200,8 +200,7 @@ void SynchronizeYamlDatabase()
         "DELETE FROM `creature_loot_template` WHERE `Comment` LIKE 'Heroic YAML:%' OR "
         "`Comment` = 'Heroic Baroness Anastari - Savage Gladiator Chain'");
     WorldDatabase.DirectExecute(
-        "DELETE FROM `areatrigger_scripts` WHERE `ScriptName` IN "
-        "('heroic_stratholme_service_entrance','heroic_dungeon_entrance')");
+        "DELETE FROM `areatrigger_scripts` WHERE `ScriptName` = 'heroic_dungeon_entrance'");
 
     for (auto const& [mapId, dungeon] : config.dungeons)
     {
