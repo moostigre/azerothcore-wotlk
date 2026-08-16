@@ -52,6 +52,7 @@
 #include "GitRevision.h"
 #include "GridNotifiersImpl.h"
 #include "GroupMgr.h"
+#include "GuardReinforcementMgr.h"
 #include "GuildMgr.h"
 #include "InstanceSaveMgr.h"
 #include "IPLocation.h"
@@ -538,6 +539,9 @@ void World::SetInitialWorldSettings()
 
     LOG_INFO("server.loading", "Loading Creature Templates...");
     sObjectMgr->LoadCreatureTemplates();
+
+    LOG_INFO("server.loading", "Loading Guard Reinforcements...");
+    sGuardReinforcementMgr->LoadGuardReinforcements();
 
     LOG_INFO("server.loading", "Loading Equipment Templates...");           // must be after LoadCreatureTemplates
     sObjectMgr->LoadEquipmentTemplates();

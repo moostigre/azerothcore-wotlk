@@ -28,6 +28,7 @@
 #include "GameEventMgr.h"
 #include "GameTime.h"
 #include "GridNotifiers.h"
+#include "GuardReinforcementMgr.h"
 #include "Group.h"
 #include "GroupMgr.h"
 #include "Log.h"
@@ -2866,6 +2867,8 @@ void Creature::SetInCombatWithZone()
 void Creature::AtEngage(Unit* target)
 {
     Unit::AtEngage(target);
+
+    sGuardReinforcementMgr->TrySummonGuard(this, target);
 
     if (!IsStandState())
         SetStandState(UNIT_STAND_STATE_STAND);
