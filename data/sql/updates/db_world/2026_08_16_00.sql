@@ -1,5 +1,5 @@
 -- Guard reinforcement posts used when guards, civilians, or explicitly configured
--- creatures detect or engage a hostile player.
+-- creatures engage a hostile player.
 CREATE TABLE `guard_reinforcement` (
   `areaId` int unsigned NOT NULL,
   `team` tinyint unsigned NOT NULL COMMENT '0 Alliance, 1 Horde, 2 neutral',

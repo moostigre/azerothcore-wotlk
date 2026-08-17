@@ -339,6 +339,7 @@ void Creature::RemoveFromWorld()
 {
     if (IsInWorld())
     {
+        sGuardReinforcementMgr->OnCreatureRemoved(this);
         sScriptMgr->OnCreatureRemoveWorld(this);
 
         if (GetZoneScript())

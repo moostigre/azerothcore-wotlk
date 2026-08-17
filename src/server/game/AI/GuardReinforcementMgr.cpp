@@ -19,7 +19,6 @@
 #include "Random.h"
 #include "SharedDefines.h"
 #include <algorithm>
-#include <chrono>
 #include <mutex>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,14 +30,6 @@ namespace
     constexpr std::chrono::minutes ChargeRechargeTime{ 1 };
     constexpr uint32 GuardOutOfCombatDespawnTime = 30 * IN_MILLISECONDS;
 
-    struct GuardPost
-    {
-        uint32 guardEntry = 0;
-        uint8 charges = MaxCharges;
-        std::chrono::steady_clock::time_point nextUse;
-        std::chrono::steady_clock::time_point lastRecharge = std::chrono::steady_clock::now();
-    };
-
     using GuardPostKey = uint64;
 
     GuardPostKey MakeKey(uint32 areaId, TeamId team)
@@ -46,10 +37,75 @@ namespace
         return (uint64(areaId) << 8) | uint8(team);
     }
 
-    std::unordered_map<GuardPostKey, GuardPost> GuardPosts;
-    std::unordered_map<ObjectGuid, ObjectGuid> ActiveReinforcements;
+    std::unordered_map<GuardPostKey, GuardReinforcementPost> GuardPosts;
+    GuardReinforcementTracker ActiveReinforcements;
     std::unordered_set<uint32> ExplicitCallers;
     std::mutex GuardPostLock;
+}
+
+GuardReinforcementPost::GuardReinforcementPost(uint32 guardEntry, std::chrono::steady_clock::time_point now)
+    : _guardEntry(guardEntry), _charges(MaxCharges), _lastRecharge(now)
+{
+}
+
+std::optional<GuardReinforcementReservation> GuardReinforcementPost::Reserve(
+    std::chrono::steady_clock::time_point now)
+{
+    if (now - _lastRecharge >= ChargeRechargeTime)
+    {
+        uint64 recovered = std::chrono::duration_cast<std::chrono::minutes>(now - _lastRecharge).count();
+        _charges = std::min<uint64>(MaxCharges, uint64(_charges) + recovered);
+        _lastRecharge += ChargeRechargeTime * recovered;
+    }
+
+    if (!_charges || now < _nextUse)
+        return std::nullopt;
+
+    --_charges;
+    GuardReinforcementReservation reservation{ _guardEntry, _nextUse, now + UseCooldown };
+    _nextUse = reservation.reservedUntil;
+    return reservation;
+}
+
+void GuardReinforcementPost::Refund(GuardReinforcementReservation const& reservation)
+{
+    _charges = std::min<uint8>(MaxCharges, _charges + 1);
+    if (_nextUse == reservation.reservedUntil)
+        _nextUse = reservation.previousNextUse;
+}
+
+std::optional<ObjectGuid> GuardReinforcementTracker::GetGuard(ObjectGuid caller) const
+{
+    if (auto itr = _guardsByCaller.find(caller); itr != _guardsByCaller.end())
+        return itr->second;
+    return std::nullopt;
+}
+
+void GuardReinforcementTracker::Track(ObjectGuid caller, ObjectGuid guard)
+{
+    Remove(caller);
+    _guardsByCaller[caller] = guard;
+    _callersByGuard[guard] = caller;
+}
+
+void GuardReinforcementTracker::Remove(ObjectGuid creature)
+{
+    if (auto itr = _guardsByCaller.find(creature); itr != _guardsByCaller.end())
+    {
+        _callersByGuard.erase(itr->second);
+        _guardsByCaller.erase(itr);
+    }
+    if (auto itr = _callersByGuard.find(creature); itr != _callersByGuard.end())
+    {
+        _guardsByCaller.erase(itr->second);
+        _callersByGuard.erase(itr);
+    }
+}
+
+void GuardReinforcementTracker::Clear()
+{
+    _guardsByCaller.clear();
+    _callersByGuard.clear();
 }
 
 GuardReinforcementMgr* GuardReinforcementMgr::instance()
@@ -64,7 +120,7 @@ void GuardReinforcementMgr::LoadGuardReinforcements()
 
     std::lock_guard<std::mutex> lock(GuardPostLock);
     GuardPosts.clear();
-    ActiveReinforcements.clear();
+    ActiveReinforcements.Clear();
     ExplicitCallers.clear();
 
     if (QueryResult result = WorldDatabase.Query("SELECT areaId, team, guardEntry FROM guard_reinforcement"))
@@ -88,9 +144,7 @@ void GuardReinforcementMgr::LoadGuardReinforcements()
                 continue;
             }
 
-            GuardPost post;
-            post.guardEntry = guardEntry;
-            GuardPosts.emplace(MakeKey(areaId, TeamId(teamValue)), post);
+            GuardPosts.emplace(MakeKey(areaId, TeamId(teamValue)), GuardReinforcementPost(guardEntry));
         } while (result->NextRow());
     }
 
@@ -127,17 +181,17 @@ bool GuardReinforcementMgr::TrySummonGuard(Creature* caller, Unit* enemy)
     if (!player || !caller->IsHostileTo(player))
         return false;
 
-    uint32 guardEntry = 0;
+    GuardPostKey postKey = 0;
+    std::optional<GuardReinforcementReservation> reservation;
     {
         std::lock_guard<std::mutex> lock(GuardPostLock);
 
-        auto activeItr = ActiveReinforcements.find(caller->GetGUID());
-        if (activeItr != ActiveReinforcements.end())
+        if (std::optional<ObjectGuid> activeGuard = ActiveReinforcements.GetGuard(caller->GetGUID()))
         {
-            if (ObjectAccessor::GetCreature(*caller, activeItr->second))
+            if (ObjectAccessor::GetCreature(*caller, *activeGuard))
                 return false;
 
-            ActiveReinforcements.erase(activeItr);
+            ActiveReinforcements.Remove(caller->GetGUID());
         }
 
         TeamId guardTeam = player->GetTeamId() == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
@@ -147,36 +201,40 @@ bool GuardReinforcementMgr::TrySummonGuard(Creature* caller, Unit* enemy)
         if (itr == GuardPosts.end())
             return false;
 
-        GuardPost& post = itr->second;
-        auto now = std::chrono::steady_clock::now();
-        if (now - post.lastRecharge >= ChargeRechargeTime)
-        {
-            uint64 recovered = std::chrono::duration_cast<std::chrono::minutes>(now - post.lastRecharge).count();
-            post.charges = std::min<uint64>(MaxCharges, uint64(post.charges) + recovered);
-            post.lastRecharge += ChargeRechargeTime * recovered;
-        }
-
-        if (!post.charges || now < post.nextUse)
+        reservation = itr->second.Reserve(std::chrono::steady_clock::now());
+        if (!reservation)
             return false;
-
-        --post.charges;
-        post.nextUse = now + UseCooldown;
-        guardEntry = post.guardEntry;
+        postKey = itr->first;
     }
 
     Position spawnPosition = caller->GetNearPosition(5.0f, frand(0.0f, 2.0f * float(M_PI)));
-    if (Creature* guard = caller->SummonCreature(guardEntry, spawnPosition, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, GuardOutOfCombatDespawnTime))
+    if (Creature* guard = caller->SummonCreature(reservation->guardEntry, spawnPosition, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, GuardOutOfCombatDespawnTime))
     {
         {
             std::lock_guard<std::mutex> lock(GuardPostLock);
-            ActiveReinforcements[caller->GetGUID()] = guard->GetGUID();
+            ActiveReinforcements.Track(caller->GetGUID(), guard->GetGUID());
         }
 
         guard->AI()->AttackStart(player);
         return true;
     }
 
+    {
+        std::lock_guard<std::mutex> lock(GuardPostLock);
+        if (auto itr = GuardPosts.find(postKey); itr != GuardPosts.end())
+            itr->second.Refund(*reservation);
+    }
+
     LOG_ERROR("entities.unit", "Failed to summon guard reinforcement {} for creature {} in area {}.",
-        guardEntry, caller->GetGUID().ToString(), caller->GetAreaId());
+        reservation->guardEntry, caller->GetGUID().ToString(), caller->GetAreaId());
     return false;
+}
+
+void GuardReinforcementMgr::OnCreatureRemoved(Creature* creature)
+{
+    if (!creature)
+        return;
+
+    std::lock_guard<std::mutex> lock(GuardPostLock);
+    ActiveReinforcements.Remove(creature->GetGUID());
 }

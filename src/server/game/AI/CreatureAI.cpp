@@ -19,7 +19,6 @@
 #include "AreaBoundary.h"
 #include "Creature.h"
 #include "CreatureAIImpl.h"
-#include "GuardReinforcementMgr.h"
 #include "CreatureGroups.h"
 #include "CreatureTextMgr.h"
 #include "GameObjectAI.h"
@@ -174,7 +173,6 @@ void CreatureAI::MoveInLineOfSight_Safe(Unit* who)
         return;
     }
     m_MoveInLineOfSight_locked = true;
-    sGuardReinforcementMgr->TrySummonGuard(me, who);
     MoveInLineOfSight(who);
     m_MoveInLineOfSight_locked = false;
 }
