@@ -28,7 +28,7 @@ namespace
     constexpr uint8 MaxCharges = 10;
     constexpr std::chrono::seconds UseCooldown{ 10 };
     constexpr std::chrono::minutes ChargeRechargeTime{ 1 };
-    constexpr uint32 GuardDespawnTime = 2 * MINUTE * IN_MILLISECONDS;
+    constexpr uint32 GuardOutOfCombatDespawnTime = 30 * IN_MILLISECONDS;
 
     struct GuardPost
     {
@@ -153,7 +153,7 @@ bool GuardReinforcementMgr::TrySummonGuard(Creature* caller, Unit* enemy)
     }
 
     Position spawnPosition = caller->GetNearPosition(5.0f, frand(0.0f, 2.0f * float(M_PI)));
-    if (Creature* guard = caller->SummonCreature(guardEntry, spawnPosition, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, GuardDespawnTime))
+    if (Creature* guard = caller->SummonCreature(guardEntry, spawnPosition, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, GuardOutOfCombatDespawnTime))
     {
         guard->AI()->AttackStart(player);
         return true;
