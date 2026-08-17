@@ -12,6 +12,7 @@
 #include "CreatureAI.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "QueryResult.h"
@@ -46,6 +47,7 @@ namespace
     }
 
     std::unordered_map<GuardPostKey, GuardPost> GuardPosts;
+    std::unordered_map<ObjectGuid, ObjectGuid> ActiveReinforcements;
     std::unordered_set<uint32> ExplicitCallers;
     std::mutex GuardPostLock;
 }
@@ -62,6 +64,7 @@ void GuardReinforcementMgr::LoadGuardReinforcements()
 
     std::lock_guard<std::mutex> lock(GuardPostLock);
     GuardPosts.clear();
+    ActiveReinforcements.clear();
     ExplicitCallers.clear();
 
     if (QueryResult result = WorldDatabase.Query("SELECT areaId, team, guardEntry FROM guard_reinforcement"))
@@ -112,7 +115,7 @@ void GuardReinforcementMgr::LoadGuardReinforcements()
 
 bool GuardReinforcementMgr::TrySummonGuard(Creature* caller, Unit* enemy)
 {
-    if (!caller || !enemy || !caller->IsAlive() || caller->IsPet() || caller->IsCharmed())
+    if (!caller || !enemy || !caller->IsAlive() || caller->IsPet() || caller->IsCharmed() || caller->IsSummon())
         return false;
 
     // This method is called from the visibility hot path. Reject ordinary creatures
@@ -127,6 +130,15 @@ bool GuardReinforcementMgr::TrySummonGuard(Creature* caller, Unit* enemy)
     uint32 guardEntry = 0;
     {
         std::lock_guard<std::mutex> lock(GuardPostLock);
+
+        auto activeItr = ActiveReinforcements.find(caller->GetGUID());
+        if (activeItr != ActiveReinforcements.end())
+        {
+            if (ObjectAccessor::GetCreature(*caller, activeItr->second))
+                return false;
+
+            ActiveReinforcements.erase(activeItr);
+        }
 
         TeamId guardTeam = player->GetTeamId() == TEAM_ALLIANCE ? TEAM_HORDE : TEAM_ALLIANCE;
         auto itr = GuardPosts.find(MakeKey(caller->GetAreaId(), guardTeam));
@@ -155,6 +167,11 @@ bool GuardReinforcementMgr::TrySummonGuard(Creature* caller, Unit* enemy)
     Position spawnPosition = caller->GetNearPosition(5.0f, frand(0.0f, 2.0f * float(M_PI)));
     if (Creature* guard = caller->SummonCreature(guardEntry, spawnPosition, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, GuardOutOfCombatDespawnTime))
     {
+        {
+            std::lock_guard<std::mutex> lock(GuardPostLock);
+            ActiveReinforcements[caller->GetGUID()] = guard->GetGUID();
+        }
+
         guard->AI()->AttackStart(player);
         return true;
     }
