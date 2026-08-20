@@ -22,6 +22,7 @@
 #include "DisableMgr.h"
 #include "GameObjectAI.h"
 #include "GameObjectModel.h"
+#include "GameObjectUtils.h"
 #include "GameTime.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
@@ -490,7 +491,8 @@ void GameObject::Update(uint32 diff)
                             // Bombs
                             if (goInfo->trap.type == 2)
                                 m_cooldownTime = GameTime::GetGameTimeMS().count() + 10 * IN_MILLISECONDS; // Hardcoded tooltip value
-                            else if (GetOwner() || GetSpellId())
+                            else if (Acore::GameObjectUtils::ShouldApplyTrapStartDelay(
+                                GetOwner() != nullptr, GetSpellId()))
                                 m_cooldownTime = GameTime::GetGameTimeMS().count() + goInfo->trap.startDelay * IN_MILLISECONDS;
 
                             m_lootState = GO_READY;
