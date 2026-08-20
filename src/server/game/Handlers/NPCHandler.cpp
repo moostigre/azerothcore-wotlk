@@ -45,6 +45,37 @@ enum StableResultCode
     STABLE_ERR_EXOTIC       = 0x0C,                         // "you are unable to control exotic creatures"
 };
 
+namespace
+{
+void UpdatePetSlotInDB(Player const* player, uint32 petNumber, PetSaveMode slot)
+{
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_SLOT_BY_ID);
+    stmt->SetData(0, slot);
+    stmt->SetData(1, player->GetGUID().GetCounter());
+    stmt->SetData(2, petNumber);
+    CharacterDatabase.Execute(stmt);
+}
+
+void RestorePetAfterFailedStableSwap(Player const* player, PetStable* petStable, bool wasUnslotted)
+{
+    // LoadPetFromDB changes the in-memory slots only after the pet has been created successfully.
+    // On failure CurrentPet is therefore still the previous pet that was staged for the swap.
+    if (!petStable->CurrentPet)
+        return;
+
+    PetSaveMode const originalSlot = wasUnslotted ? PET_SAVE_NOT_IN_SLOT : PET_SAVE_AS_CURRENT;
+    UpdatePetSlotInDB(player, petStable->CurrentPet->PetNumber, originalSlot);
+
+    // An unsummoned pet is temporarily moved to CurrentPet before LoadPetFromDB so that
+    // its successful slot swap is identical to the live-pet path. Move it back on failure.
+    if (wasUnslotted)
+    {
+        petStable->UnslottedPets.push_back(std::move(*petStable->CurrentPet));
+        petStable->CurrentPet.reset();
+    }
+}
+}
+
 void WorldSession::HandleTabardVendorActivateOpcode(WorldPacket& recvData)
 {
     ObjectGuid guid;
@@ -341,20 +372,22 @@ void WorldSession::HandleListStabledPetsOpcode(WorldPacket& recvData)
     if (!CheckStableMaster(npcGUID))
         return;
 
-    // remove fake death
-    if (GetPlayer()->HasUnitState(UNIT_STATE_DIED))
-        GetPlayer()->RemoveAurasByType(SPELL_AURA_FEIGN_DEATH);
-
-    // remove mounts this fix bug where getting pet from stable while mounted deletes pet.
-    if (GetPlayer()->IsMounted())
-        GetPlayer()->RemoveAurasByType(SPELL_AURA_MOUNTED);
-
     SendStablePet(npcGUID);
 }
 
 void WorldSession::SendStablePet(ObjectGuid guid)
 {
     LOG_DEBUG("network", "WORLD: Recv MSG_LIST_STABLED_PETS Send.");
+
+    // SendStablePet is also called by the Call Stabled Pet aura, which bypasses
+    // HandleListStabledPetsOpcode. Normalize player state here for every way of
+    // opening the stable; swapping while the pet is temporarily unsummoned by a
+    // mount can otherwise leave the in-memory and persisted pet slots out of sync.
+    if (GetPlayer()->HasUnitState(UNIT_STATE_DIED))
+        GetPlayer()->RemoveAurasByType(SPELL_AURA_FEIGN_DEATH);
+
+    if (GetPlayer()->IsMounted())
+        GetPlayer()->RemoveAurasByType(SPELL_AURA_MOUNTED);
 
     WorldPacket data(MSG_LIST_STABLED_PETS, 200);           // guess size
     data << guid;
@@ -472,11 +505,7 @@ void WorldSession::HandleStablePet(WorldPacket& recvData)
                 return;
             }
 
-            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_SLOT_BY_ID);
-            stmt->SetData(0, PetSaveMode(PET_SAVE_FIRST_STABLE_SLOT + freeSlot));
-            stmt->SetData(1, _player->GetGUID().GetCounter());
-            stmt->SetData(2, petStable->UnslottedPets[0].PetNumber);
-            CharacterDatabase.Execute(stmt);
+            UpdatePetSlotInDB(_player, petStable->UnslottedPets[0].PetNumber, PetSaveMode(PET_SAVE_FIRST_STABLE_SLOT + freeSlot));
 
             // stable unsummoned pet
             petStable->StabledPets[freeSlot] = std::move(petStable->UnslottedPets.back());
@@ -539,6 +568,7 @@ void WorldSession::HandleUnstablePet(WorldPacket& recvData)
     }
 
     Pet* oldPet = _player->GetPet();
+    bool const previousPetWasUnslotted = !oldPet && petStable->UnslottedPets.size() == 1;
     if (oldPet)
     {
         // try performing a swap, client sends this packet instead of swap when starting from stabled slot
@@ -558,11 +588,8 @@ void WorldSession::HandleUnstablePet(WorldPacket& recvData)
             return;
         }
 
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_SLOT_BY_ID);
-        stmt->SetData(0, PetSaveMode(PET_SAVE_FIRST_STABLE_SLOT + std::distance(petStable->StabledPets.begin(), stabledPet)));
-        stmt->SetData(1, _player->GetGUID().GetCounter());
-        stmt->SetData(2, petStable->UnslottedPets[0].PetNumber);
-        CharacterDatabase.Execute(stmt);
+        UpdatePetSlotInDB(_player, petStable->UnslottedPets[0].PetNumber,
+            PetSaveMode(PET_SAVE_FIRST_STABLE_SLOT + std::distance(petStable->StabledPets.begin(), stabledPet)));
 
         // move unsummoned pet into CurrentPet slot so that it gets moved into stable slot later
         petStable->CurrentPet = std::move(petStable->UnslottedPets.back());
@@ -579,26 +606,17 @@ void WorldSession::HandleUnstablePet(WorldPacket& recvData)
     {
         delete newPet;
 
-        petStable->UnslottedPets.push_back(std::move(*petStable->CurrentPet));
-        petStable->CurrentPet.reset();
-
-        // update current pet slot in db immediately to maintain slot consistency, dismissed pet was already saved
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_SLOT_BY_ID);
-        stmt->SetData(0, PET_SAVE_NOT_IN_SLOT);
-        stmt->SetData(1, _player->GetGUID().GetCounter());
-        stmt->SetData(2, petnumber);
-        CharacterDatabase.Execute(stmt);
+        // Keep the requested pet in its original stable slot and restore the old current
+        // pet's DB slot. Moving CurrentPet to UnslottedPets here inverted the in-memory
+        // and persisted slots and could leave multiple invisible unslotted hunter pets.
+        RestorePetAfterFailedStableSwap(_player, petStable, previousPetWasUnslotted);
 
         SendStableResult(STABLE_ERR_STABLE);
     }
     else
     {
         // update current pet slot in db immediately to maintain slot consistency, dismissed pet was already saved
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_SLOT_BY_ID);
-        stmt->SetData(0, PET_SAVE_AS_CURRENT);
-        stmt->SetData(1, _player->GetGUID().GetCounter());
-        stmt->SetData(2, petnumber);
-        CharacterDatabase.Execute(stmt);
+        UpdatePetSlotInDB(_player, petnumber, PET_SAVE_AS_CURRENT);
 
         SendStableResult(STABLE_SUCCESS_UNSTABLE);
     }
@@ -692,6 +710,7 @@ void WorldSession::HandleStableSwapPet(WorldPacket& recvData)
     }
 
     Pet* oldPet = _player->GetPet();
+    bool const previousPetWasUnslotted = !oldPet && petStable->UnslottedPets.size() == 1;
     if (oldPet)
     {
         if (!oldPet->IsAlive() || !oldPet->IsHunterPet())
@@ -710,11 +729,8 @@ void WorldSession::HandleStableSwapPet(WorldPacket& recvData)
             return;
         }
 
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_SLOT_BY_ID);
-        stmt->SetData(0, PetSaveMode(PET_SAVE_FIRST_STABLE_SLOT + std::distance(petStable->StabledPets.begin(), stabledPet)));
-        stmt->SetData(1, _player->GetGUID().GetCounter());
-        stmt->SetData(2, petStable->UnslottedPets[0].PetNumber);
-        CharacterDatabase.Execute(stmt);
+        UpdatePetSlotInDB(_player, petStable->UnslottedPets[0].PetNumber,
+            PetSaveMode(PET_SAVE_FIRST_STABLE_SLOT + std::distance(petStable->StabledPets.begin(), stabledPet)));
 
         // move unsummoned pet into CurrentPet slot so that it gets moved into stable slot later
         petStable->CurrentPet = std::move(petStable->UnslottedPets.back());
@@ -733,24 +749,14 @@ void WorldSession::HandleStableSwapPet(WorldPacket& recvData)
         delete newPet;
         SendStableResult(STABLE_ERR_STABLE);
 
-        petStable->UnslottedPets.push_back(std::move(*petStable->CurrentPet));
-        petStable->CurrentPet.reset();
-
-        // update current pet slot in db immediately to maintain slot consistency, dismissed pet was already saved
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_SLOT_BY_ID);
-        stmt->SetData(0, PET_SAVE_NOT_IN_SLOT);
-        stmt->SetData(1, _player->GetGUID().GetCounter());
-        stmt->SetData(2, petId);
-        CharacterDatabase.Execute(stmt);
+        // LoadPetFromDB did not move either pet, so only undo the old current pet's
+        // earlier DB save. The requested pet remains in its original stable slot.
+        RestorePetAfterFailedStableSwap(_player, petStable, previousPetWasUnslotted);
     }
     else
     {
         // update current pet slot in db immediately to maintain slot consistency, dismissed pet was already saved
-        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_PET_SLOT_BY_ID);
-        stmt->SetData(0, PET_SAVE_AS_CURRENT);
-        stmt->SetData(1, _player->GetGUID().GetCounter());
-        stmt->SetData(2, petId);
-        CharacterDatabase.Execute(stmt);
+        UpdatePetSlotInDB(_player, petId, PET_SAVE_AS_CURRENT);
 
         SendStableResult(STABLE_SUCCESS_UNSTABLE);
     }
