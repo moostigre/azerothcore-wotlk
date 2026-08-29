@@ -84,6 +84,10 @@ SmartAI::SmartAI(Creature* c) : CreatureAI(c)
 
     _currentRangeMode = false;
     _attackDistance = 0.f;
+    _pendingDistancing = 0.f;
+    _isDistancingForSpell = false;
+    _rangeModeBeforeDistancing = false;
+    _attackDistanceBeforeDistancing = 0.f;
     _mainSpellId = 0;
 }
 
@@ -882,6 +886,9 @@ void SmartAI::JustRespawned()
 
 void SmartAI::JustReachedHome()
 {
+    _pendingDistancing = 0.f;
+    _isDistancingForSpell = false;
+
     GetScript()->OnReset();
 
     if (!mJustReset)
@@ -1254,8 +1261,26 @@ void SmartAI::DistanceYourself(float range)
 
     float combatReach = me->GetMeleeRange(victim);
     float distance = DISTANCING_CONSTANT + std::max(combatReach * 1.5f, combatReach + range);
+
+    if (!_isDistancingForSpell)
+    {
+        _rangeModeBeforeDistancing = _currentRangeMode;
+        _attackDistanceBeforeDistancing = _attackDistance;
+        _isDistancingForSpell = true;
+    }
+
     me->GetMotionMaster()->DistanceYourself(distance);
     _pendingDistancing = distance;
+}
+
+void SmartAI::RestoreMovementAfterDistancing()
+{
+    if (!_isDistancingForSpell)
+        return;
+
+    _pendingDistancing = 0.f;
+    _isDistancingForSpell = false;
+    SetCurrentRangeMode(_rangeModeBeforeDistancing, _attackDistanceBeforeDistancing);
 }
 
 void SmartAI::SetFollow(Unit* target, float dist, float angle, uint32 credit, uint32 end, uint32 creditType, bool aliveState)
@@ -1365,7 +1390,8 @@ void SmartAI::WaypointPathEnded(uint32 nodeId, uint32 pathId)
 
 void SmartAI::DistancingEnded()
 {
-    SetCurrentRangeMode(_currentRangeMode, _attackDistance);
+    // The cast action that requested distancing restores the previous chase mode
+    // after it has retried the spell from the new position.
     _pendingDistancing = 0.f;
 }
 

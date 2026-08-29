@@ -654,7 +654,11 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
         case SMART_ACTION_CAST:
         {
             if (targets.empty())
+            {
+                if (IsSmart())
+                    CAST_AI(SmartAI, me->AI())->RestoreMovementAfterDistancing();
                 break;
+            }
 
             Unit* caster = me;
             // Areatrigger Cast!
@@ -664,7 +668,7 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
             if (e.action.cast.targetsLimit)
                 Acore::Containers::RandomResize(targets, e.action.cast.targetsLimit);
 
-            bool failedSpellCast = false, successfulSpellCast = false;
+            bool failedSpellCast = false, successfulSpellCast = false, requestedDistancing = false;
 
             for (WorldObject* target : targets)
             {
@@ -722,6 +726,7 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
 
                         float minDistance = std::max(meleeRange, spellMinRange) - distanceToTarget + NOMINAL_MELEE_RANGE;
                         CAST_AI(SmartAI, me->AI())->DistanceYourself(std::min(minDistance, spellMaxRange));
+                        requestedDistancing = true;
                         continue;
                     }
 
@@ -779,6 +784,10 @@ void SmartScript::ProcessAction(SmartScriptHolder& e, Unit* unit, uint32 var0, u
                               me->GetGUID().ToString(), e.action.cast.spell, target->GetGUID().ToString(), e.action.cast.castFlags);
                 }
             }
+
+            // Keep the temporary position only while waiting for the retry that the distancing request scheduled.
+            if ((!requestedDistancing || successfulSpellCast) && IsSmart())
+                CAST_AI(SmartAI, me->AI())->RestoreMovementAfterDistancing();
 
             // If there is at least 1 failed cast and no successful casts at all, retry again on next loop
             if (failedSpellCast && !successfulSpellCast)

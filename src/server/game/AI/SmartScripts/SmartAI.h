@@ -69,6 +69,7 @@ public:
     void SetCurrentRangeMode(bool on, float range = 0.f);
     void SetMainSpell(uint32 spellId);
     void DistanceYourself(float range);
+    void RestoreMovementAfterDistancing();
     void SetFollow(Unit* target, float dist = 0.0f, float angle = 0.0f, uint32 credit = 0, uint32 end = 0, uint32 creditType = 0, bool aliveState = true);
     void StopFollow(bool complete);
 
@@ -282,6 +283,9 @@ private:
     bool _currentRangeMode;
     float _attackDistance;
     float _pendingDistancing;
+    bool _isDistancingForSpell;
+    bool _rangeModeBeforeDistancing;
+    float _attackDistanceBeforeDistancing;
     uint32 _mainSpellId;
 };
 
