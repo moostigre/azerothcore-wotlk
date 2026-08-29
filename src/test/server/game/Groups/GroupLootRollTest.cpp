@@ -16,6 +16,8 @@
  */
 
 #include "Group.h"
+#include "MiscScript.h"
+#include "ScriptMgr.h"
 #include "gtest/gtest.h"
 
 namespace
@@ -34,6 +36,15 @@ ObjectGuid PlayerGuid(uint32 counter)
 {
     return ObjectGuid::Create<HighGuid::Player>(counter);
 }
+
+class TestGroup : public Group
+{
+public:
+    void AddRoll(Roll* roll)
+    {
+        RollId.push_back(roll);
+    }
+};
 }
 
 TEST(GroupLootRollTest, EligiblePlayerWithPassOnLootCountsAsPass)
@@ -180,4 +191,26 @@ TEST(GroupLootRollTest, ResolvingTimeoutTwiceDoesNotDoubleCountPasses)
     EXPECT_EQ(roll.ResolvePendingVotesAsPass().size(), 1);
     EXPECT_TRUE(roll.ResolvePendingVotesAsPass().empty());
     EXPECT_EQ(roll.totalPass, 1);
+}
+
+TEST(GroupLootRollTest, QuestOnlyLootAcceptsExplicitVote)
+{
+    Loot loot;
+    loot.quest_items.push_back(CreateLootItem());
+    ObjectGuid const itemGuid = ObjectGuid::Create<HighGuid::Item>(1);
+    ObjectGuid const needGuid = PlayerGuid(1);
+    Roll* roll = new Roll(itemGuid, loot.quest_items[0]);
+    roll->setLoot(&loot);
+    roll->itemSlot = 0;
+    roll->AddPlayerVote(needGuid, false, true);
+    roll->AddPlayerVote(PlayerGuid(2), false, true);
+
+    ScriptRegistry<MiscScript>::InitEnabledHooksIfNeeded(MISCHOOK_END);
+    TestGroup group;
+    group.AddRoll(roll);
+
+    EXPECT_FALSE(group.CountRollVote(needGuid, itemGuid, ROLL_NEED));
+    EXPECT_EQ(roll->playerVote[needGuid], NEED);
+    EXPECT_EQ(roll->totalNeed, 1);
+    EXPECT_FALSE(roll->IsComplete());
 }

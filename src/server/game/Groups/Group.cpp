@@ -1552,9 +1552,8 @@ bool Group::CountRollVote(ObjectGuid playerGUID, ObjectGuid Guid, uint8 Choice)
     if (Choice < MAX_ROLL_TYPE && itr == roll->playerVote.end())
         return false;
 
-    if (roll->getLoot())
-        if (roll->getLoot()->items.empty())
-            return false;
+    if (Loot* loot = roll->getLoot(); loot && loot->items.empty() && loot->quest_items.empty())
+        return false;
 
     switch (Choice)
     {
