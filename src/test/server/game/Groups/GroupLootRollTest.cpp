@@ -241,3 +241,54 @@ TEST(GroupLootRollTest, TimeoutThroughEndRollUnblocksLootAndRemovesRoll)
     EXPECT_FALSE(loot.items[0].is_blocked);
     EXPECT_EQ(group.GetRollCount(), 0);
 }
+
+TEST(GroupLootRollTest, AutoPassedPlayerCannotSubmitAnotherVote)
+{
+    Loot loot;
+    loot.items.push_back(CreateLootItem());
+    loot.items[0].is_blocked = true;
+    ObjectGuid const itemGuid = ObjectGuid::Create<HighGuid::Item>(1);
+    ObjectGuid const autoPassGuid = PlayerGuid(1);
+    Roll* roll = new Roll(itemGuid, loot.items[0]);
+    roll->setLoot(&loot);
+    roll->itemSlot = 0;
+    roll->AddPlayerVote(autoPassGuid, true, true);
+    roll->AddPlayerVote(PlayerGuid(2), false, true);
+
+    ScriptRegistry<MiscScript>::InitEnabledHooksIfNeeded(MISCHOOK_END);
+    TestGroup group;
+    group.AddRoll(roll);
+
+    EXPECT_FALSE(group.CountRollVote(autoPassGuid, itemGuid, ROLL_NEED));
+    EXPECT_EQ(roll->playerVote[autoPassGuid], PASS);
+    EXPECT_EQ(roll->totalPass, 1);
+    EXPECT_EQ(roll->totalNeed, 0);
+    EXPECT_EQ(group.GetRollCount(), 1);
+    EXPECT_TRUE(loot.items[0].is_blocked);
+}
+
+TEST(GroupLootRollTest, PlayerCannotVoteTwice)
+{
+    Loot loot;
+    loot.items.push_back(CreateLootItem());
+    loot.items[0].is_blocked = true;
+    ObjectGuid const itemGuid = ObjectGuid::Create<HighGuid::Item>(1);
+    ObjectGuid const needGuid = PlayerGuid(1);
+    Roll* roll = new Roll(itemGuid, loot.items[0]);
+    roll->setLoot(&loot);
+    roll->itemSlot = 0;
+    roll->AddPlayerVote(needGuid, false, true);
+    roll->AddPlayerVote(PlayerGuid(2), false, true);
+
+    ScriptRegistry<MiscScript>::InitEnabledHooksIfNeeded(MISCHOOK_END);
+    TestGroup group;
+    group.AddRoll(roll);
+
+    EXPECT_FALSE(group.CountRollVote(needGuid, itemGuid, ROLL_NEED));
+    EXPECT_FALSE(group.CountRollVote(needGuid, itemGuid, ROLL_GREED));
+    EXPECT_EQ(roll->playerVote[needGuid], NEED);
+    EXPECT_EQ(roll->totalNeed, 1);
+    EXPECT_EQ(roll->totalGreed, 0);
+    EXPECT_EQ(group.GetRollCount(), 1);
+    EXPECT_TRUE(loot.items[0].is_blocked);
+}

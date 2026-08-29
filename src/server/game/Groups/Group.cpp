@@ -1206,9 +1206,7 @@ void Group::GroupLoot(Loot* loot, WorldObject* pLootedObject)
                     canLoot = pLootedObject->HasAllowedLooter(member->GetGUID());
 
                 if (canLoot)
-                {
                     r->AddPlayerVote(member->GetGUID(), member->GetPassOnGroupLoot(), CanRollOnItem(*i, member, loot));
-                }
             }
 
             if (r->totalPlayersRolling > 0)
@@ -1363,7 +1361,8 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                     canLoot = lootedObject->HasAllowedLooter(playerToRoll->GetGUID());
 
                 if (canLoot)
-                    r->AddPlayerVote(playerToRoll->GetGUID(), playerToRoll->GetPassOnGroupLoot(), CanRollOnItem(*i, playerToRoll, loot));
+                    r->AddPlayerVote(playerToRoll->GetGUID(), playerToRoll->GetPassOnGroupLoot(),
+                        CanRollOnItem(*i, playerToRoll, loot));
             }
 
             if (r->totalPlayersRolling > 0)
@@ -1435,7 +1434,8 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                 continue;
 
             if (playerToRoll->IsAtGroupRewardDistance(lootedObject))
-                r->AddPlayerVote(playerToRoll->GetGUID(), playerToRoll->GetPassOnGroupLoot(), CanRollOnItem(*i, playerToRoll, loot));
+                r->AddPlayerVote(playerToRoll->GetGUID(), playerToRoll->GetPassOnGroupLoot(),
+                    CanRollOnItem(*i, playerToRoll, loot));
         }
 
         if (r->totalPlayersRolling > 0)
@@ -1549,7 +1549,7 @@ bool Group::CountRollVote(ObjectGuid playerGUID, ObjectGuid Guid, uint8 Choice)
     // this condition means that player joins to the party after roll begins
     // Xinef: if choice == MAX_ROLL_TYPE, player was removed from the map in removefromgroup
     // Xinef: itr can be invalid as it is not used below
-    if (Choice < MAX_ROLL_TYPE && itr == roll->playerVote.end())
+    if (Choice < MAX_ROLL_TYPE && (itr == roll->playerVote.end() || itr->second != NOT_EMITED_YET))
         return false;
 
     if (Loot* loot = roll->getLoot(); loot && loot->items.empty() && loot->quest_items.empty())
