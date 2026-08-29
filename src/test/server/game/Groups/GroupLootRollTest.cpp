@@ -44,6 +44,11 @@ public:
     {
         RollId.push_back(roll);
     }
+
+    std::size_t GetRollCount() const
+    {
+        return RollId.size();
+    }
 };
 }
 
@@ -213,4 +218,26 @@ TEST(GroupLootRollTest, QuestOnlyLootAcceptsExplicitVote)
     EXPECT_EQ(roll->playerVote[needGuid], NEED);
     EXPECT_EQ(roll->totalNeed, 1);
     EXPECT_FALSE(roll->IsComplete());
+}
+
+TEST(GroupLootRollTest, TimeoutThroughEndRollUnblocksLootAndRemovesRoll)
+{
+    Loot loot;
+    loot.items.push_back(CreateLootItem());
+    loot.items[0].is_blocked = true;
+    ObjectGuid const itemGuid = ObjectGuid::Create<HighGuid::Item>(1);
+    Roll* roll = new Roll(itemGuid, loot.items[0]);
+    roll->setLoot(&loot);
+    roll->itemSlot = 0;
+    roll->AddPlayerVote(PlayerGuid(1), true, true);
+    roll->AddPlayerVote(PlayerGuid(2), false, true);
+
+    ScriptRegistry<MiscScript>::InitEnabledHooksIfNeeded(MISCHOOK_END);
+    TestGroup group;
+    group.AddRoll(roll);
+
+    group.EndRoll(&loot);
+
+    EXPECT_FALSE(loot.items[0].is_blocked);
+    EXPECT_EQ(group.GetRollCount(), 0);
 }
