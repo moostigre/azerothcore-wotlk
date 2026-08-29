@@ -22,7 +22,7 @@ namespace
 {
 LootItem CreateLootItem()
 {
-    LootItem item;
+    LootItem item{};
     item.itemid = 1;
     item.randomPropertyId = 0;
     item.randomSuffix = 0;
@@ -98,5 +98,86 @@ TEST(GroupLootRollTest, AutoPassesAllowRollToCompleteWhenOtherPlayersVote)
     ++roll.totalGreed;
 
     EXPECT_EQ(roll.totalPass, 2);
-    EXPECT_EQ(roll.totalPass + roll.totalNeed + roll.totalGreed, roll.totalPlayersRolling);
+    EXPECT_TRUE(roll.IsComplete());
+}
+
+TEST(GroupLootRollTest, AllPassFinalizationUnblocksLootItem)
+{
+    LootItem item = CreateLootItem();
+    item.is_blocked = true;
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    roll.AddPlayerVote(PlayerGuid(1), true, true);
+    roll.AddPlayerVote(PlayerGuid(2), true, true);
+
+    EXPECT_TRUE(roll.IsComplete());
+    EXPECT_TRUE(roll.FinalizeIfAllPassed(item));
+    EXPECT_FALSE(item.is_blocked);
+}
+
+TEST(GroupLootRollTest, MixedPassDoesNotFinalizeOrUnblockLootItem)
+{
+    LootItem item = CreateLootItem();
+    item.is_blocked = true;
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    roll.AddPlayerVote(PlayerGuid(1), true, true);
+    roll.AddPlayerVote(PlayerGuid(2), false, true);
+
+    EXPECT_FALSE(roll.IsComplete());
+    EXPECT_FALSE(roll.FinalizeIfAllPassed(item));
+    EXPECT_TRUE(item.is_blocked);
+}
+
+TEST(GroupLootRollTest, TimeoutConvertsOnlyPendingVotesToPasses)
+{
+    LootItem const item = CreateLootItem();
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    ObjectGuid const optedPassGuid = PlayerGuid(1);
+    ObjectGuid const forcedPassGuid = PlayerGuid(2);
+    ObjectGuid const timedOutGuid = PlayerGuid(3);
+    ObjectGuid const needGuid = PlayerGuid(4);
+
+    roll.AddPlayerVote(optedPassGuid, true, true);
+    roll.AddPlayerVote(forcedPassGuid, false, false);
+    roll.AddPlayerVote(timedOutGuid, false, true);
+    roll.AddPlayerVote(needGuid, false, true);
+    roll.playerVote[needGuid] = NEED;
+    ++roll.totalNeed;
+
+    std::vector<ObjectGuid> const timedOutPlayers = roll.ResolvePendingVotesAsPass();
+
+    ASSERT_EQ(timedOutPlayers.size(), 1);
+    EXPECT_EQ(timedOutPlayers[0], timedOutGuid);
+    EXPECT_EQ(roll.playerVote[optedPassGuid], PASS);
+    EXPECT_EQ(roll.playerVote[forcedPassGuid], PASS);
+    EXPECT_EQ(roll.playerVote[timedOutGuid], PASS);
+    EXPECT_EQ(roll.playerVote[needGuid], NEED);
+    EXPECT_EQ(roll.totalPass, 3);
+    EXPECT_EQ(roll.totalNeed, 1);
+    EXPECT_TRUE(roll.IsComplete());
+    EXPECT_FALSE(roll.IsAutoPass(timedOutGuid));
+}
+
+TEST(GroupLootRollTest, TimeoutAllPassFinalizationUnblocksLootItem)
+{
+    LootItem item = CreateLootItem();
+    item.is_blocked = true;
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    roll.AddPlayerVote(PlayerGuid(1), false, true);
+    roll.AddPlayerVote(PlayerGuid(2), false, true);
+
+    EXPECT_EQ(roll.ResolvePendingVotesAsPass().size(), 2);
+    EXPECT_TRUE(roll.FinalizeIfAllPassed(item));
+    EXPECT_FALSE(item.is_blocked);
+}
+
+TEST(GroupLootRollTest, ResolvingTimeoutTwiceDoesNotDoubleCountPasses)
+{
+    LootItem const item = CreateLootItem();
+    Roll roll(ObjectGuid::Create<HighGuid::Item>(1), item);
+    ObjectGuid const timedOutGuid = PlayerGuid(1);
+    roll.AddPlayerVote(timedOutGuid, false, true);
+
+    EXPECT_EQ(roll.ResolvePendingVotesAsPass().size(), 1);
+    EXPECT_TRUE(roll.ResolvePendingVotesAsPass().empty());
+    EXPECT_EQ(roll.totalPass, 1);
 }

@@ -88,6 +88,36 @@ bool Roll::IsAutoPass(ObjectGuid playerGuid) const
     return _autoPassPlayers.contains(playerGuid);
 }
 
+bool Roll::IsComplete() const
+{
+    return totalPass + totalNeed + totalGreed >= totalPlayersRolling;
+}
+
+bool Roll::FinalizeIfAllPassed(LootItem& lootItem) const
+{
+    if (!totalPlayersRolling || totalPass != totalPlayersRolling)
+        return false;
+
+    lootItem.is_blocked = false;
+    return true;
+}
+
+std::vector<ObjectGuid> Roll::ResolvePendingVotesAsPass()
+{
+    std::vector<ObjectGuid> timedOutPlayers;
+    for (auto& [playerGuid, vote] : playerVote)
+    {
+        if (vote != NOT_EMITED_YET)
+            continue;
+
+        vote = PASS;
+        ++totalPass;
+        timedOutPlayers.push_back(playerGuid);
+    }
+
+    return timedOutPlayers;
+}
+
 static void SendRollWonItemViaMail(Player* player, LootItem const* lootItem, uint32 itemId)
 {
     Item* mailItem = Item::CreateItem(itemId, lootItem->count, player, false, lootItem->randomPropertyId);
@@ -1204,8 +1234,11 @@ void Group::GroupLoot(Loot* loot, WorldObject* pLootedObject)
                     }
                 }
 
-                if (r->totalPass == r->totalPlayersRolling)
+                if (r->FinalizeIfAllPassed(loot->items[itemSlot]))
+                {
+                    SendLootAllPassed(*r);
                     delete r;
+                }
                 else
                 {
                     SendLootStartRoll(60000, pLootedObject->GetMapId(), *r);
@@ -1267,19 +1300,34 @@ void Group::GroupLoot(Loot* loot, WorldObject* pLootedObject)
 
             loot->quest_items[itemSlot - loot->items.size()].is_blocked = true;
 
-            SendLootStartRoll(60000, pLootedObject->GetMapId(), *r);
-
-            RollId.push_back(r);
-
-            if (Creature* creature = pLootedObject->ToCreature())
+            for (Roll::PlayerVote::const_iterator itr = r->playerVote.begin(); itr != r->playerVote.end(); ++itr)
             {
-                creature->m_groupLootTimer = 60000;
-                creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                Player* player = ObjectAccessor::FindPlayer(itr->first);
+                if (player && itr->second == PASS)
+                    SendLootRoll(newitemGUID, player->GetGUID(), 128, ROLL_PASS, *r, r->IsAutoPass(player->GetGUID()));
             }
-            else if (GameObject* go = pLootedObject->ToGameObject())
+
+            if (r->FinalizeIfAllPassed(loot->quest_items[itemSlot - loot->items.size()]))
             {
-                go->m_groupLootTimer = 60000;
-                go->lootingGroupLowGUID = GetGUID().GetCounter();
+                SendLootAllPassed(*r);
+                delete r;
+            }
+            else
+            {
+                SendLootStartRoll(60000, pLootedObject->GetMapId(), *r);
+
+                RollId.push_back(r);
+
+                if (Creature* creature = pLootedObject->ToCreature())
+                {
+                    creature->m_groupLootTimer = 60000;
+                    creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                }
+                else if (GameObject* go = pLootedObject->ToGameObject())
+                {
+                    go->m_groupLootTimer = 60000;
+                    go->lootingGroupLowGUID = GetGUID().GetCounter();
+                }
             }
         }
         else
@@ -1343,17 +1391,25 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                         SendLootStartRollToPlayer(60000, lootedObject->GetMapId(), p, p->CanRollForItemInLFG(item, lootedObject) == EQUIP_ERR_OK, *r);
                 }
 
-                RollId.push_back(r);
-
-                if (Creature* creature = lootedObject->ToCreature())
+                if (r->FinalizeIfAllPassed(loot->items[itemSlot]))
                 {
-                    creature->m_groupLootTimer = 60000;
-                    creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                    SendLootAllPassed(*r);
+                    delete r;
                 }
-                else if (GameObject* go = lootedObject->ToGameObject())
+                else
                 {
-                    go->m_groupLootTimer = 60000;
-                    go->lootingGroupLowGUID = GetGUID().GetCounter();
+                    RollId.push_back(r);
+
+                    if (Creature* creature = lootedObject->ToCreature())
+                    {
+                        creature->m_groupLootTimer = 60000;
+                        creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                    }
+                    else if (GameObject* go = lootedObject->ToGameObject())
+                    {
+                        go->m_groupLootTimer = 60000;
+                        go->lootingGroupLowGUID = GetGUID().GetCounter();
+                    }
                 }
             }
             else
@@ -1402,17 +1458,25 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                     SendLootStartRollToPlayer(60000, lootedObject->GetMapId(), p, p->CanRollForItemInLFG(item, lootedObject) == EQUIP_ERR_OK, *r);
             }
 
-            RollId.push_back(r);
-
-            if (Creature* creature = lootedObject->ToCreature())
+            if (r->FinalizeIfAllPassed(loot->quest_items[itemSlot - loot->items.size()]))
             {
-                creature->m_groupLootTimer = 60000;
-                creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                SendLootAllPassed(*r);
+                delete r;
             }
-            else if (GameObject* go = lootedObject->ToGameObject())
+            else
             {
-                go->m_groupLootTimer = 60000;
-                go->lootingGroupLowGUID = GetGUID().GetCounter();
+                RollId.push_back(r);
+
+                if (Creature* creature = lootedObject->ToCreature())
+                {
+                    creature->m_groupLootTimer = 60000;
+                    creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                }
+                else if (GameObject* go = lootedObject->ToGameObject())
+                {
+                    go->m_groupLootTimer = 60000;
+                    go->lootingGroupLowGUID = GetGUID().GetCounter();
+                }
             }
         }
         else
@@ -1516,7 +1580,7 @@ bool Group::CountRollVote(ObjectGuid playerGUID, ObjectGuid Guid, uint8 Choice)
             break;
     }
 
-    if (roll->totalPass + roll->totalNeed + roll->totalGreed >= roll->totalPlayersRolling)
+    if (roll->IsComplete())
     {
         CountTheRoll(rollI);
         return true;
@@ -1531,7 +1595,10 @@ void Group::EndRoll(Loot* pLoot)
     {
         if ((*itr)->getLoot() == pLoot)
         {
-            CountTheRoll(itr);           //i don't have to edit player votes, who didn't vote ... he will pass
+            for (ObjectGuid const& playerGuid : (*itr)->ResolvePendingVotesAsPass())
+                SendLootRoll(ObjectGuid::Empty, playerGuid, 128, ROLL_PASS, **itr);
+
+            CountTheRoll(itr);
             itr = RollId.begin();
         }
         else

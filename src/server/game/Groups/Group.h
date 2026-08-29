@@ -158,6 +158,9 @@ public:
     void targetObjectBuildLink();
     void AddPlayerVote(ObjectGuid playerGuid, bool passOnLoot, bool canRoll);
     [[nodiscard]] bool IsAutoPass(ObjectGuid playerGuid) const;
+    [[nodiscard]] bool IsComplete() const;
+    [[nodiscard]] bool FinalizeIfAllPassed(LootItem& lootItem) const;
+    std::vector<ObjectGuid> ResolvePendingVotesAsPass();
 
     ObjectGuid itemGUID;
     uint32 itemid;
