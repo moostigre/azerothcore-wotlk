@@ -741,7 +741,7 @@ bool TC9CorpseTransfer::Restore(Player* player, WorldPacket& packet)
             summon->ReplaceAllNpcFlags(UNIT_NPC_FLAG_NONE);
             summon->SetCorpseRemoveTime(uint32(expiresAt - now));
             summon->SetTC9TransferredLootRecipient(decoded.recipient, decoded.recipientGroup);
-            if (!player->GetMap()->AddToMap(summon))
+            if (!player->GetMap()->AddToMap(static_cast<Creature*>(summon)))
             {
                 delete summon;
                 return false;
