@@ -40,7 +40,8 @@ ToCloud9Sidecar* ToCloud9Sidecar::instance()
     return &instance;
 }
 
-ToCloud9Sidecar::ToCloud9Sidecar() : _clusterModeEnabled(false), _isCrossrealm(false)
+ToCloud9Sidecar::ToCloud9Sidecar()
+    : _clusterModeEnabled(false), _seamlessLayerSwitchEnabled(false), _isCrossrealm(false)
 {
 }
 
@@ -112,6 +113,8 @@ bool ToCloud9Sidecar::CheckLibsidecarAbi()
 void ToCloud9Sidecar::Init(uint16 port, int realmId)
 {
     _clusterModeEnabled = sConfigMgr->GetOption<bool>("Cluster.Enabled", false);
+    _seamlessLayerSwitchEnabled = _clusterModeEnabled &&
+        sConfigMgr->GetOption<bool>("Cluster.SeamlessLayerSwitch", false);
 
     if (_clusterModeEnabled)
     {

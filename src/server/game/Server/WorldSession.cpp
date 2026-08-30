@@ -20,6 +20,7 @@
 */
 
 #include "TC9Sidecar.h"
+#include "TC9RedirectProtocol.h"
 #include "WorldSession.h"
 #include "AccountMgr.h"
 #include "BattlegroundMgr.h"
@@ -1610,36 +1611,45 @@ void WorldSession::HandleTC9PrepareForRedirect(WorldPacket& recvData)
         return;
     }
 
-    constexpr uint8 TC9_REDIRECT_PROTOCOL_V2 = 2;
-    constexpr uint8 TC9_REDIRECT_OPTION_SEAMLESS = 1 << 0;
-
-    bool seamlessRedirect = false;
+    bool versionedRequest = false;
+    uint8 acceptedOptions = 0;
     try
     {
         if (recvData.rpos() < recvData.size())
         {
+            versionedRequest = true;
             uint8 version = 0;
-            uint8 options = 0;
-            recvData >> version >> options;
-            if (version != TC9_REDIRECT_PROTOCOL_V2 || recvData.rpos() != recvData.size() ||
-                (options & static_cast<uint8>(~TC9_REDIRECT_OPTION_SEAMLESS)) != 0)
+            uint8 requestedOptions = 0;
+            recvData >> version >> requestedOptions;
+            if (version != TC9Redirect::VersionedRequest || recvData.rpos() != recvData.size())
             {
-                WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, 1);
+                WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, 3);
                 data << uint8(1);
+                data << TC9Redirect::VersionedRequest;
+                data << uint8(0);
                 SendPacket(&data);
                 return;
             }
-            seamlessRedirect = (options & TC9_REDIRECT_OPTION_SEAMLESS) != 0;
+
+            acceptedOptions = requestedOptions & TC9Redirect::SupportedOptions;
+            if (!sToCloud9Sidecar->SeamlessLayerSwitchEnabled())
+                acceptedOptions &= static_cast<uint8>(~TC9Redirect::OptionSeamless);
         }
     }
     catch (ByteBufferException const&)
     {
-        WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, 1);
+        WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, versionedRequest ? 3 : 1);
         data << uint8(1);
+        if (versionedRequest)
+        {
+            data << TC9Redirect::VersionedRequest;
+            data << uint8(0);
+        }
         SendPacket(&data);
         return;
     }
 
+    bool const seamlessRedirect = (acceptedOptions & TC9Redirect::OptionSeamless) != 0;
     uint32 const originalPhaseMask = player->GetPhaseMask();
     if (seamlessRedirect)
         player->SetPhaseMask(0, true);
@@ -1648,31 +1658,37 @@ void WorldSession::HandleTC9PrepareForRedirect(WorldPacket& recvData)
 
     CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
     player->SaveToDB(trans, false, true);
-    AddTransactionCallback(CharacterDatabase.AsyncCommitTransaction(trans)).AfterComplete([this, seamlessRedirect, originalPhaseMask](bool success)
-    {
-        Player* player = GetPlayer();
-        if (!success && seamlessRedirect && player)
-            player->SetPhaseMask(originalPhaseMask, true);
-
-        WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, 1);
-        data << uint8(!success); // 0 - Success, 1 - Failed.
-        SendPacket(&data);
-
-        if (!success)
+    AddTransactionCallback(CharacterDatabase.AsyncCommitTransaction(trans)).AfterComplete(
+        [this, versionedRequest, acceptedOptions, seamlessRedirect, originalPhaseMask](bool success)
         {
-            LOG_ERROR("network", "Failed to save player, AccountId = {}", GetAccountId());
-            return;
-        }
+            Player* player = GetPlayer();
+            if (!success && seamlessRedirect && player)
+                player->SetPhaseMask(originalPhaseMask, true);
 
-        LOG_DEBUG("network", "Saved, AccountId = {}", GetAccountId());
+            WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, versionedRequest ? 3 : 1);
+            data << uint8(!success); // 0 - Success, 1 - Failed.
+            if (versionedRequest)
+            {
+                data << TC9Redirect::VersionedRequest;
+                data << acceptedOptions;
+            }
+            SendPacket(&data);
 
-        if (!player)
-            return;
+            if (!success)
+            {
+                LOG_ERROR("network", "Failed to save player, AccountId = {}", GetAccountId());
+                return;
+            }
 
-        player->m_Events.AddEventAtOffset([this](){
-            KickPlayer("HandlePrepareForRedirect client redirected");
-        }, 100ms);
-    });
+            LOG_DEBUG("network", "Saved, AccountId = {}", GetAccountId());
+
+            if (!player)
+                return;
+
+            player->m_Events.AddEventAtOffset([this](){
+                KickPlayer("HandlePrepareForRedirect client redirected");
+            }, 100ms);
+        });
 }
 
 void WorldSession::SetPacketLogging(bool state)
