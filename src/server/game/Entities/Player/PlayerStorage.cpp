@@ -5712,7 +5712,11 @@ bool Player::LoadFromDB(ObjectGuid playerGuid, CharacterDatabaseQueryHolder cons
 
 bool Player::isAllowedToLoot(Creature const* creature)
 {
-    if (!creature->isDead() || !creature->IsDamageEnoughForLootingAndReward() || creature->IsLootRewardDisabled())
+    // A recovered TC9 corpse is reconstructed from a validated snapshot and
+    // has no combat history on this core. Its source corpse already passed the
+    // damage/reward checks before it was transferred.
+    if (!creature->isDead() || (!creature->IsTC9RecoveredCorpse() &&
+        (!creature->IsDamageEnoughForLootingAndReward() || creature->IsLootRewardDisabled())))
         return false;
 
     if (HasPendingBind())

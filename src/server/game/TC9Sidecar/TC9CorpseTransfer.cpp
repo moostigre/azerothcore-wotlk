@@ -284,7 +284,8 @@ uint64 TC9CorpseTransfer::LocationKey(uint32 mapId, uint32 instanceId)
 void TC9CorpseTransfer::TrackAndPublish(Creature* creature)
 {
     if (!sToCloud9Sidecar->ClusterModeEnabled() || !creature || !creature->IsInWorld() || creature->IsAlive() ||
-        creature->loot.isLooted())
+        creature->loot.isLooted() || !creature->IsDamageEnoughForLootingAndReward() ||
+        creature->IsLootRewardDisabled())
         return;
 
     std::lock_guard<std::recursive_mutex> lock(_mutex);
@@ -317,11 +318,14 @@ void TC9CorpseTransfer::TrackAndPublish(Creature* creature)
     tracked.expiresAt = uint64(creature->GetCorpseRemoveTime());
     tracked.viewers.insert(carrier);
 
+    // Preserve the private corpse for the complete group roster captured at
+    // death. Members can be hosted by another core already, so GetFirstMember
+    // alone would omit them and make the recovered corpse invisible when the
+    // carrier joins their layer. Per-item eligibility is still evaluated
+    // separately below and is not broadened by visibility.
     if (Group* group = creature->GetLootRecipientGroup())
-        for (GroupReference* itr = group->GetFirstMember(); itr; itr = itr->next())
-            if (Player* member = itr->GetSource())
-                if (member->IsInMap(creature) && member->IsAtLootRewardDistance(creature))
-                    tracked.viewers.insert(member->GetGUID());
+        for (Group::MemberSlot const& member : group->GetMemberSlots())
+            tracked.viewers.insert(member.guid);
 
     for (ObjectGuid const& guid : creature->GetAllowedLooters())
         tracked.viewers.insert(guid);
