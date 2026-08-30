@@ -73,6 +73,7 @@ public:
 
     void SetCorpseDelay(uint32 delay) { m_corpseDelay = delay; }
     void SetCorpseRemoveTime(uint32 delay);
+    [[nodiscard]] time_t GetCorpseRemoveTime() const { return m_corpseRemoveTime; }
     [[nodiscard]] uint32 GetCorpseDelay() const { return m_corpseDelay; }
     [[nodiscard]] bool HasFlagsExtra(uint32 flag) const { return GetCreatureTemplate()->HasFlagsExtra(flag); }
     [[nodiscard]] bool IsRacialLeader() const { return GetCreatureTemplate()->RacialLeader; }
@@ -241,6 +242,25 @@ public:
 
     void SetLootRecipient (Unit* unit, bool withGroup = true);
     void AllLootRemovedFromCorpse();
+
+    void SetTC9CorpseTransferData(
+        uint64 snapshotId, uint32 revision, ObjectGuid carrier, GuidSet viewers, bool recovered);
+    void SetTC9TransferredLootRecipient(ObjectGuid recipient, ObjectGuid::LowType groupGuid);
+    [[nodiscard]] uint64 GetTC9CorpseSnapshotId() const { return _tc9CorpseSnapshotId; }
+    [[nodiscard]] uint32 GetTC9CorpseSnapshotRevision() const { return _tc9CorpseSnapshotRevision; }
+    void SetTC9CorpseSnapshotRevision(uint32 revision) { _tc9CorpseSnapshotRevision = revision; }
+    void ClearTC9CorpseSnapshotId() { _tc9CorpseSnapshotId = 0; }
+    [[nodiscard]] ObjectGuid GetTC9CorpseCarrier() const { return _tc9CorpseCarrier; }
+    [[nodiscard]] GuidSet const& GetTC9CorpseViewers() const { return _tc9CorpseViewers; }
+    [[nodiscard]] bool IsTC9RecoveredCorpse() const { return _tc9RecoveredCorpse; }
+    void SetTC9CorpseTransferOverflow(bool overflow) { _tc9CorpseTransferOverflow = overflow; }
+    [[nodiscard]] bool IsTC9CorpseTransferOverflow() const { return _tc9CorpseTransferOverflow; }
+    [[nodiscard]] bool IsTC9RecoveredMasterLootInitialized() const { return _tc9RecoveredMasterLootInitialized; }
+    void SetTC9RecoveredMasterLootInitialized() { _tc9RecoveredMasterLootInitialized = true; }
+    [[nodiscard]] bool IsTC9CorpseVisibleFor(ObjectGuid guid) const
+    {
+        return _tc9CorpseViewers.find(guid) != _tc9CorpseViewers.end();
+    }
 
     [[nodiscard]] uint16 GetLootMode() const { return m_LootMode; }
     [[nodiscard]] bool HasLootMode(uint16 lootMode) const { return m_LootMode & lootMode; }
@@ -470,6 +490,14 @@ protected:
 
     ObjectGuid m_lootRecipient;
     ObjectGuid::LowType m_lootRecipientGroup;
+
+    uint64 _tc9CorpseSnapshotId{0};
+    uint32 _tc9CorpseSnapshotRevision{0};
+    ObjectGuid _tc9CorpseCarrier;
+    GuidSet _tc9CorpseViewers;
+    bool _tc9RecoveredCorpse{false};
+    bool _tc9CorpseTransferOverflow{false};
+    bool _tc9RecoveredMasterLootInitialized{false};
 
     bool _respawnCompatibilityMode{true};
 

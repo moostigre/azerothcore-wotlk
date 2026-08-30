@@ -27,6 +27,7 @@
 #include "Opcodes.h"
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "TC9CorpseTransfer.h"
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
@@ -36,6 +37,7 @@ void WorldSession::HandleAutostoreLootItemOpcode(WorldPacket& recvData)
     Player* player = GetPlayer();
     ObjectGuid lguid = player->GetLootGUID();
     Loot* loot = nullptr;
+    Creature* lootCreature = nullptr;
     uint8 lootSlot = 0;
 
     recvData >> lootSlot;
@@ -91,7 +93,11 @@ void WorldSession::HandleAutostoreLootItemOpcode(WorldPacket& recvData)
     {
         Creature* creature = GetPlayer()->GetMap()->GetCreature(lguid);
 
-        bool lootAllowed = creature && creature->IsAlive() == (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) && creature->loot.loot_type == LOOT_PICKPOCKETING);
+        bool isVisibleRecoveredCorpse = creature &&
+            (!creature->IsTC9RecoveredCorpse() || creature->IsTC9CorpseVisibleFor(player->GetGUID()));
+        bool lootAllowed = isVisibleRecoveredCorpse &&
+            creature->IsAlive() ==
+                (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) && creature->loot.loot_type == LOOT_PICKPOCKETING);
         if (!lootAllowed || !creature->IsWithinDistInMap(_player, INTERACTION_DISTANCE))
         {
             player->SendLootError(lguid, lootAllowed ? LOOT_ERROR_TOO_FAR : LOOT_ERROR_DIDNT_KILL);
@@ -99,6 +105,7 @@ void WorldSession::HandleAutostoreLootItemOpcode(WorldPacket& recvData)
         }
 
         loot = &creature->loot;
+        lootCreature = creature;
     }
 
     sScriptMgr->OnPlayerAfterCreatureLoot(player);
@@ -117,6 +124,9 @@ void WorldSession::HandleAutostoreLootItemOpcode(WorldPacket& recvData)
     // If player is removing the last LootItem, delete the empty container.
     if (loot->isLooted() && lguid.IsItem())
         DoLootRelease(lguid);
+
+    if (lootCreature)
+        sTC9CorpseTransfer->Publish(lootCreature);
 }
 
 void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
@@ -129,6 +139,7 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
         return;
 
     Loot* loot = nullptr;
+    Creature* lootCreature = nullptr;
     bool shareMoney = true;
 
     switch (guid.GetHigh())
@@ -170,10 +181,15 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
         case HighGuid::Vehicle:
             {
                 Creature* creature = player->GetMap()->GetCreature(guid);
-                bool lootAllowed = creature && creature->IsAlive() == (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) && creature->loot.loot_type == LOOT_PICKPOCKETING);
+                bool isVisibleRecoveredCorpse = creature &&
+                    (!creature->IsTC9RecoveredCorpse() || creature->IsTC9CorpseVisibleFor(player->GetGUID()));
+                bool lootAllowed = isVisibleRecoveredCorpse &&
+                    creature->IsAlive() == (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) &&
+                        creature->loot.loot_type == LOOT_PICKPOCKETING);
                 if (lootAllowed && creature->IsWithinDistInMap(player, INTERACTION_DISTANCE))
                 {
                     loot = &creature->loot;
+                    lootCreature = creature;
                     if (creature->IsAlive())
                         shareMoney = false;
                 }
@@ -281,6 +297,9 @@ void WorldSession::HandleLootMoneyOpcode(WorldPacket& /*recvData*/)
         // Delete container if empty
         if (loot->isLooted() && guid.IsItem())
             DoLootRelease(guid);
+
+        if (lootCreature)
+            sTC9CorpseTransfer->Publish(lootCreature);
     }
 }
 
@@ -308,6 +327,8 @@ void WorldSession::HandleLootOpcode(WorldPacket& recvData)
         player->InterruptNonMeleeSpells(false);
 
     player->SendLoot(guid, LOOT_CORPSE);
+    if (Creature* creature = player->GetMap()->GetCreature(guid))
+        sTC9CorpseTransfer->Publish(creature);
 }
 
 void WorldSession::HandleLootReleaseOpcode(WorldPacket& recvData)
@@ -439,7 +460,11 @@ void WorldSession::DoLootRelease(ObjectGuid lguid)
     {
         Creature* creature = GetPlayer()->GetMap()->GetCreature(lguid);
 
-        bool lootAllowed = creature && creature->IsAlive() == (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) && creature->loot.loot_type == LOOT_PICKPOCKETING);
+        bool isVisibleRecoveredCorpse = creature &&
+            (!creature->IsTC9RecoveredCorpse() || creature->IsTC9CorpseVisibleFor(player->GetGUID()));
+        bool lootAllowed = isVisibleRecoveredCorpse &&
+            creature->IsAlive() ==
+                (player->IsClass(CLASS_ROGUE, CLASS_CONTEXT_ABILITY) && creature->loot.loot_type == LOOT_PICKPOCKETING);
         if (!lootAllowed || !creature->IsWithinDistInMap(_player, INTERACTION_DISTANCE))
             return;
 
@@ -466,6 +491,8 @@ void WorldSession::DoLootRelease(ObjectGuid lguid)
             // force dynflag update to update looter and lootable info
             creature->ForceValuesUpdateAtIndex(UNIT_DYNAMIC_FLAGS);
         }
+
+        sTC9CorpseTransfer->Publish(creature);
     }
 
     //Player is not looking at loot list, he doesn't need to see updates on the loot list
@@ -511,14 +538,16 @@ void WorldSession::HandleLootMasterGiveOpcode(WorldPacket& recvData)
     }
 
     Loot* loot = nullptr;
+    Creature* lootCreature = nullptr;
 
     if (GetPlayer()->GetLootGUID().IsCreatureOrVehicle())
     {
         Creature* creature = GetPlayer()->GetMap()->GetCreature(lootguid);
-        if (!creature)
+        if (!creature || (creature->IsTC9RecoveredCorpse() && !creature->IsTC9CorpseVisibleFor(_player->GetGUID())))
             return;
 
         loot = &creature->loot;
+        lootCreature = creature;
     }
     else if (GetPlayer()->GetLootGUID().IsGameObject())
     {
@@ -570,4 +599,7 @@ void WorldSession::HandleLootMasterGiveOpcode(WorldPacket& recvData)
 
     loot->NotifyItemRemoved(slotid);
     --loot->unlootedCount;
+
+    if (lootCreature)
+        sTC9CorpseTransfer->Publish(lootCreature);
 }

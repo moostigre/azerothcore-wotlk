@@ -167,6 +167,8 @@ struct LootItem
     bool    is_counted        : 1;
     bool    needs_quest       : 1;                          // quest drop
     bool    follow_loot_rules : 1;
+    bool    uses_transferred_eligibility : 1 {false};
+    bool    had_transferred_conditions : 1 {false};
     uint8   groupid           : 7;
 
     // Constructor, copies most fields from LootStoreItem, generates random count and random suffixes/properties
@@ -179,6 +181,7 @@ struct LootItem
     bool AllowedForPlayer(Player const* player, ObjectGuid source) const;
     void AddAllowedLooter(Player const* player);
     [[nodiscard]] AllowedLooterSet const& GetAllowedLooters() const { return allowedGUIDs; }
+    [[nodiscard]] bool HasConditions() const { return !conditions.empty() || had_transferred_conditions; }
 };
 
 struct QuestItem
@@ -316,6 +319,8 @@ struct Loot
     [[nodiscard]] QuestItemMap const& GetPlayerQuestItems() const { return PlayerQuestItems; }
     [[nodiscard]] QuestItemMap const& GetPlayerFFAItems() const { return PlayerFFAItems; }
     [[nodiscard]] QuestItemMap const& GetPlayerNonQuestNonFFAConditionalItems() const { return PlayerNonQuestNonFFAConditionalItems; }
+    void RestorePlayerLootMaps(QuestItemMap&& questItems, QuestItemMap&& ffaItems, QuestItemMap&& conditionalItems);
+    void TakeTransferredState(Loot& other);
 
     std::vector<LootItem> items;
     std::vector<LootItem> quest_items;

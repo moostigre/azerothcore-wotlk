@@ -34,6 +34,7 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 #include "SharedDefines.h"
+#include "TC9CorpseTransfer.h"
 #include "TC9Sidecar.h"
 #include "UpdateFieldFlags.h"
 #include "Util.h"
@@ -1467,9 +1468,15 @@ void Group::MasterLoot(Loot* loot, WorldObject* pLootedObject)
             continue;
         }
 
-        bool canLoot = looter->IsAtLootRewardDistance(pLootedObject);
-        if (!canLoot && hasAllowedLooters)
-            canLoot = pLootedObject->HasAllowedLooter(looter->GetGUID());
+        bool canLoot = false;
+        if (Creature const* creature = pLootedObject->ToCreature(); creature && creature->IsTC9RecoveredCorpse())
+            canLoot = creature->IsTC9CorpseVisibleFor(looter->GetGUID());
+        else
+        {
+            canLoot = looter->IsAtLootRewardDistance(pLootedObject);
+            if (!canLoot && hasAllowedLooters)
+                canLoot = pLootedObject->HasAllowedLooter(looter->GetGUID());
+        }
 
         if (canLoot)
         {
@@ -1538,6 +1545,7 @@ bool Group::CountRollVote(ObjectGuid playerGUID, ObjectGuid Guid, uint8 Choice)
         CountTheRoll(rollI);
         return true;
     }
+    sTC9CorpseTransfer->PublishLootState(roll->getLoot());
     return false;
 }
 
@@ -1554,6 +1562,69 @@ void Group::EndRoll(Loot* pLoot)
         else
             ++itr;
     }
+}
+
+bool Group::HasTC9RollForLoot(Loot* loot) const
+{
+    for (Roll* roll : RollId)
+        if (roll->getLoot() == loot)
+            return true;
+    return false;
+}
+
+bool Group::GetTC9RollState(
+    Loot* loot, uint8 itemSlot, std::vector<std::pair<ObjectGuid, uint8>>& votes, uint8& voteMask)
+{
+    for (Roll* roll : RollId)
+    {
+        if (roll->getLoot() != loot || roll->itemSlot != itemSlot)
+            continue;
+
+        voteMask = roll->rollVoteMask;
+        votes.reserve(roll->playerVote.size());
+        for (auto const& vote : roll->playerVote)
+            votes.emplace_back(vote.first, uint8(vote.second));
+        return true;
+    }
+    return false;
+}
+
+void Group::RestoreTC9Roll(Loot* loot, Creature* creature, uint8 itemSlot,
+    std::vector<std::pair<ObjectGuid, uint8>> const& votes, uint8 voteMask, uint32 remainingTime)
+{
+    LootItem const& item = itemSlot >= loot->items.size() ?
+        loot->quest_items[itemSlot - loot->items.size()] : loot->items[itemSlot];
+    ObjectGuid rollGuid = ObjectGuid::Create<HighGuid::Item>(sObjectMgr->GetGenerator<HighGuid::Item>().Generate());
+    Roll* roll = new Roll(rollGuid, item);
+    roll->setLoot(loot);
+    roll->itemSlot = itemSlot;
+    roll->rollVoteMask = voteMask;
+
+    for (auto const& voteData : votes)
+    {
+        RollVote vote = RollVote(voteData.second);
+        roll->playerVote[voteData.first] = vote;
+        if (vote == NOT_VALID)
+            continue;
+        ++roll->totalPlayersRolling;
+        if (vote == PASS)
+            ++roll->totalPass;
+        else if (vote == NEED)
+            ++roll->totalNeed;
+        else if (vote == GREED || vote == DISENCHANT)
+            ++roll->totalGreed;
+    }
+
+    RollId.push_back(roll);
+    creature->m_groupLootTimer = std::max(creature->m_groupLootTimer, remainingTime);
+    creature->lootingGroupLowGUID = GetGUID().GetCounter();
+
+    ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(item.itemid);
+    for (auto const& voteData : votes)
+        if (voteData.second == NOT_EMITED_YET)
+            if (Player* voter = ObjectAccessor::FindConnectedPlayer(voteData.first))
+                SendLootStartRollToPlayer(remainingTime, creature->GetMapId(), voter,
+                    voter->CanRollForItemInLFG(itemTemplate, creature) == EQUIP_ERR_OK, *roll);
 }
 
 void Group::RemovePlayerFromRolls(ObjectGuid guid)
@@ -1800,7 +1871,8 @@ void Group::CountTheRoll(Rolls::iterator rollI)
             item->is_blocked = false;
     }
 
-    if (Loot* loot = roll->getLoot(); loot && loot->isLooted() && loot->sourceGameObject)
+    Loot* loot = roll->getLoot();
+    if (loot && loot->isLooted() && loot->sourceGameObject)
     {
         GameObjectTemplate const* goInfo = loot->sourceGameObject->GetGOInfo();
         if (goInfo && goInfo->type == GAMEOBJECT_TYPE_CHEST)
@@ -1809,6 +1881,8 @@ void Group::CountTheRoll(Rolls::iterator rollI)
             loot->sourceGameObject->SetLootState(GO_JUST_DEACTIVATED);
         }
     }
+
+    sTC9CorpseTransfer->PublishLootState(loot);
 
     RollId.erase(rollI);
     delete roll;

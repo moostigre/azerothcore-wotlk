@@ -688,6 +688,7 @@ public:                                                 // opcodes handlers
     void SendSetPlayerDeclinedNamesResult(DeclinedNameResult result, ObjectGuid guid);
 
     void HandleTC9PrepareForRedirect(WorldPacket& recvData);
+    void HandleTC9RestoreCorpse(WorldPacket& recvData);
 
     // played time
     void HandlePlayedTime(WorldPackets::Character::PlayedTimeClient& packet);

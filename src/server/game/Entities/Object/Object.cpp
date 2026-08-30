@@ -1860,6 +1860,9 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, bool ignoreStealth, boo
 
             if (Creature const* creature = obj->ToCreature())
             {
+                if (creature->IsTC9RecoveredCorpse() && !creature->IsTC9CorpseVisibleFor(GetGUID()))
+                    return false;
+
                 if (TempSummon const* tempSummon = creature->ToTempSummon())
                 {
                     if (tempSummon->IsVisibleBySummonerOnly() && GetGUID() != tempSummon->GetSummonerGUID())

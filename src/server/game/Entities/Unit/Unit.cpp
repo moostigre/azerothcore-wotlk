@@ -64,6 +64,7 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "TemporarySummon.h"
+#include "TC9CorpseTransfer.h"
 #include "Totem.h"
 #include "TotemAI.h"
 #include "Transport.h"
@@ -14303,6 +14304,9 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
     }
 
     sScriptMgr->OnUnitDeath(victim, killer);
+
+    if (creature)
+        sTC9CorpseTransfer->TrackAndPublish(creature);
 }
 
 void Unit::SetControlled(bool apply, UnitState state, Unit* source /*= nullptr*/, bool isFear /*= false*/)

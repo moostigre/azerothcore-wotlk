@@ -310,6 +310,10 @@ public:
     bool CountRollVote(ObjectGuid playerGUID, ObjectGuid Guid, uint8 Choise);
     void EndRoll(Loot* loot);
     void RemovePlayerFromRolls(ObjectGuid guid);
+    bool HasTC9RollForLoot(Loot* loot) const;
+    bool GetTC9RollState(Loot* loot, uint8 itemSlot, std::vector<std::pair<ObjectGuid, uint8>>& votes, uint8& voteMask);
+    void RestoreTC9Roll(Loot* loot, Creature* creature, uint8 itemSlot,
+        std::vector<std::pair<ObjectGuid, uint8>> const& votes, uint8 voteMask, uint32 remainingTime);
 
     // related to disenchant rolls
     void ResetMaxEnchantingLevel();

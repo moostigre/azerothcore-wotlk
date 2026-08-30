@@ -43,6 +43,7 @@
 #include "SpellAuraEffects.h"
 #include "SpellMgr.h"
 #include "TemporarySummon.h"
+#include "TC9CorpseTransfer.h"
 #include "Transport.h"
 #include "Util.h"
 #include "Vehicle.h"
@@ -314,23 +315,26 @@ void Creature::AddToWorld()
         }
         Unit::AddToWorld();
 
-        SearchFormation();
+        if (!IsTC9RecoveredCorpse())
+        {
+            SearchFormation();
+            AIM_Initialize();
+        }
 
-        AIM_Initialize();
-
-        if (IsVehicle())
+        if (IsVehicle() && !IsTC9RecoveredCorpse())
         {
             GetVehicleKit()->Install();
         }
 
-        if (GetZoneScript())
+        if (GetZoneScript() && !IsTC9RecoveredCorpse())
         {
             GetZoneScript()->OnCreatureCreate(this);
         }
 
         loot.sourceWorldObjectGUID = GetGUID();
 
-        sScriptMgr->OnCreatureAddWorld(this);
+        if (!IsTC9RecoveredCorpse())
+            sScriptMgr->OnCreatureAddWorld(this);
     }
 }
 
@@ -338,9 +342,13 @@ void Creature::RemoveFromWorld()
 {
     if (IsInWorld())
     {
-        sScriptMgr->OnCreatureRemoveWorld(this);
+        if (GetTC9CorpseSnapshotId() || IsTC9CorpseTransferOverflow())
+            sTC9CorpseTransfer->Forget(this, true);
 
-        if (GetZoneScript())
+        if (!IsTC9RecoveredCorpse())
+            sScriptMgr->OnCreatureRemoveWorld(this);
+
+        if (GetZoneScript() && !IsTC9RecoveredCorpse())
             GetZoneScript()->OnCreatureRemove(this);
 
         if (m_formation)
@@ -419,6 +427,9 @@ void Creature::RemoveCorpse(bool setSpawnTime, bool skipVisibility)
 {
     if (getDeathState() != DeathState::Corpse)
         return;
+
+    if (GetTC9CorpseSnapshotId() || IsTC9CorpseTransferOverflow())
+        sTC9CorpseTransfer->Forget(this, true);
 
     if (_respawnCompatibilityMode)
     {
@@ -1362,6 +1373,23 @@ void Creature::SetLootRecipient(Unit* unit, bool withGroup)
         m_lootRecipientGroup = 0;
 
     SetDynamicFlag(UNIT_DYNFLAG_TAPPED);
+}
+
+void Creature::SetTC9CorpseTransferData(
+    uint64 snapshotId, uint32 revision, ObjectGuid carrier, GuidSet viewers, bool recovered)
+{
+    _tc9CorpseSnapshotId = snapshotId;
+    _tc9CorpseSnapshotRevision = revision;
+    _tc9CorpseCarrier = carrier;
+    _tc9CorpseViewers = std::move(viewers);
+    _tc9RecoveredCorpse = recovered;
+}
+
+void Creature::SetTC9TransferredLootRecipient(ObjectGuid recipient, ObjectGuid::LowType groupGuid)
+{
+    m_lootRecipient = recipient;
+    m_lootRecipientGroup = groupGuid;
+    SetDynamicFlag(UNIT_DYNFLAG_TAPPED | UNIT_DYNFLAG_LOOTABLE);
 }
 
 // return true if this creature is tapped by the player or by a member of his group.

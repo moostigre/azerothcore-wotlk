@@ -8195,7 +8195,9 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
         Creature* creature = GetMap()->GetCreature(guid);
 
         // must be in range and creature must be alive for pickpocket and must be dead for another loot
-        if (!creature || creature->IsAlive() != (loot_type == LOOT_PICKPOCKETING) || !creature->IsWithinDistInMap(this, INTERACTION_DISTANCE))
+        if (!creature || (creature->IsTC9RecoveredCorpse() && !creature->IsTC9CorpseVisibleFor(GetGUID())) ||
+            creature->IsAlive() != (loot_type == LOOT_PICKPOCKETING) ||
+            !creature->IsWithinDistInMap(this, INTERACTION_DISTANCE))
         {
             SendLootRelease(guid);
             return;
@@ -8250,6 +8252,16 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
             if (!recipient && !recipientGroup)
                 return;
 
+            // The client drops the master-loot candidate list on a world
+            // switch. A recovered corpse has a fresh runtime GUID, so resend
+            // that list once without regenerating Need/Greed rolls.
+            if (creature->IsTC9RecoveredCorpse() && !creature->IsTC9RecoveredMasterLootInitialized() &&
+                loot->loot_type != LOOT_NONE && recipientGroup && recipientGroup->GetLootMethod() == MASTER_LOOT)
+            {
+                recipientGroup->MasterLoot(loot, creature);
+                creature->SetTC9RecoveredMasterLootInitialized();
+            }
+
             if (loot->loot_type == LOOT_NONE)
             {
                 // for creature, loot is filled when creature is killed.
@@ -8266,6 +8278,8 @@ void Player::SendLoot(ObjectGuid guid, LootType loot_type)
                             break;
                         case MASTER_LOOT:
                             recipientGroup->MasterLoot(loot, creature);
+                            if (creature->IsTC9RecoveredCorpse())
+                                creature->SetTC9RecoveredMasterLootInitialized();
                             break;
                         default:
                             break;

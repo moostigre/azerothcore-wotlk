@@ -19,6 +19,7 @@
     \ingroup u2w
 */
 
+#include "TC9CorpseTransfer.h"
 #include "TC9Sidecar.h"
 #include "WorldSession.h"
 #include "AccountMgr.h"
@@ -1596,7 +1597,7 @@ void WorldSession::InitializeSessionCallback(CharacterDatabaseQueryHolder const&
     }
 }
 
-void WorldSession::HandleTC9PrepareForRedirect(WorldPacket& /*recvData*/)
+void WorldSession::HandleTC9PrepareForRedirect(WorldPacket& recvData)
 {
     if (!sToCloud9Sidecar->ClusterModeEnabled())
         return;
@@ -1610,19 +1611,55 @@ void WorldSession::HandleTC9PrepareForRedirect(WorldPacket& /*recvData*/)
         return;
     }
 
+    std::vector<uint64> corpseSnapshots;
+    bool detachCarriedCorpses = false;
+    try
+    {
+        if (recvData.rpos() < recvData.size())
+        {
+            detachCarriedCorpses = true;
+            uint8 version = 0;
+            uint16 count = 0;
+            recvData >> version >> count;
+            bool invalidPayload = version != 1 || count > 1024 ||
+                recvData.size() - recvData.rpos() != std::size_t(count) * sizeof(uint64);
+            if (invalidPayload)
+            {
+                WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, 1);
+                data << uint8(1);
+                SendPacket(&data);
+                return;
+            }
+            corpseSnapshots.resize(count);
+            for (uint64& snapshotId : corpseSnapshots)
+                recvData >> snapshotId;
+        }
+    }
+    catch (ByteBufferException const&)
+    {
+        WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, 1);
+        data << uint8(1);
+        SendPacket(&data);
+        return;
+    }
+
     LOG_DEBUG("network", "Starting saving, AccountId = {}", GetAccountId());
 
     CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
     player->SaveToDB(trans, false, true);
-    AddTransactionCallback(CharacterDatabase.AsyncCommitTransaction(trans)).AfterComplete([this](bool success)
+    AddTransactionCallback(CharacterDatabase.AsyncCommitTransaction(trans)).AfterComplete(
+        [this, corpseSnapshots = std::move(corpseSnapshots), detachCarriedCorpses](bool success)
     {
+        if (success && detachCarriedCorpses)
+            success = sTC9CorpseTransfer->Detach(GetPlayer(), corpseSnapshots, true);
+
         WorldPacket data(TC9_SMSG_READY_FOR_REDIRECT, 1);
         data << uint8(!success); // 0 - Success, 1 - Failed.
         SendPacket(&data);
 
         if (!success)
         {
-            LOG_ERROR("network", "Failed to save player, AccountId = {}", GetAccountId());
+            LOG_ERROR("network", "Failed to prepare player redirect, AccountId = {}", GetAccountId());
             return;
         }
 
@@ -1636,6 +1673,15 @@ void WorldSession::HandleTC9PrepareForRedirect(WorldPacket& /*recvData*/)
             KickPlayer("HandlePrepareForRedirect client redirected");
         }, 100ms);
     });
+}
+
+void WorldSession::HandleTC9RestoreCorpse(WorldPacket& recvData)
+{
+    if (!sToCloud9Sidecar->ClusterModeEnabled() || !GetPlayer())
+        return;
+
+    if (!sTC9CorpseTransfer->Restore(GetPlayer(), recvData))
+        LOG_WARN("network", "Rejected invalid TC9 corpse snapshot for AccountId = {}", GetAccountId());
 }
 
 void WorldSession::SetPacketLogging(bool state)

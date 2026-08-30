@@ -409,6 +409,8 @@ LootItem::LootItem(LootStoreItem const& li)
     is_blocked = false;
     is_underthreshold = false;
     is_counted = false;
+    uses_transferred_eligibility = false;
+    had_transferred_conditions = false;
     rollWinnerGUID = ObjectGuid::Empty;
     groupid = li.groupid;
 }
@@ -422,6 +424,12 @@ bool LootItem::AllowedForPlayer(Player const* player, ObjectGuid source) const
 
     if (sDisableMgr->IsDisabledFor(DISABLE_TYPE_LOOT, itemid, nullptr))
         return false;
+
+    // Condition pointers cannot cross a process boundary. For transferred
+    // corpses the source core evaluates them once and sends the immutable set
+    // of players who were eligible at death.
+    if (uses_transferred_eligibility)
+        return allowedGUIDs.find(player->GetGUID()) != allowedGUIDs.end();
 
     if (!sConditionMgr->IsObjectMeetToConditions(const_cast<Player*>(player), conditions))
         return false;
@@ -476,6 +484,41 @@ void LootItem::AddAllowedLooter(Player const* player)
 //
 // --------- Loot ---------
 //
+
+void Loot::RestorePlayerLootMaps(QuestItemMap&& questItems, QuestItemMap&& ffaItems, QuestItemMap&& conditionalItems)
+{
+    ASSERT(PlayerQuestItems.empty() && PlayerFFAItems.empty() && PlayerNonQuestNonFFAConditionalItems.empty());
+    PlayerQuestItems = std::move(questItems);
+    PlayerFFAItems = std::move(ffaItems);
+    PlayerNonQuestNonFFAConditionalItems = std::move(conditionalItems);
+}
+
+void Loot::TakeTransferredState(Loot& other)
+{
+    clear();
+    items = std::move(other.items);
+    quest_items = std::move(other.quest_items);
+    gold = other.gold;
+    unlootedCount = other.unlootedCount;
+    roundRobinPlayer = other.roundRobinPlayer;
+    lootOwnerGUID = other.lootOwnerGUID;
+    loot_type = other.loot_type;
+    containerGUID = other.containerGUID;
+    sourceWorldObjectGUID = other.sourceWorldObjectGUID;
+    sourceGameObject = other.sourceGameObject;
+    PlayerQuestItems = std::move(other.PlayerQuestItems);
+    PlayerFFAItems = std::move(other.PlayerFFAItems);
+    PlayerNonQuestNonFFAConditionalItems = std::move(other.PlayerNonQuestNonFFAConditionalItems);
+
+    other.gold = 0;
+    other.unlootedCount = 0;
+    other.roundRobinPlayer.Clear();
+    other.lootOwnerGUID.Clear();
+    other.loot_type = LOOT_NONE;
+    other.containerGUID.Clear();
+    other.sourceWorldObjectGUID.Clear();
+    other.sourceGameObject = nullptr;
+}
 
 // Inserts the item into the loot (called by LootTemplate processors)
 void Loot::AddItem(LootStoreItem const& item)
@@ -717,7 +760,7 @@ QuestItemList* Loot::FillNonQuestNonFFAConditionalLoot(Player* player)
         {
             item.AddAllowedLooter(player);
 
-            if (!item.conditions.empty())
+            if (item.HasConditions())
             {
                 ql->push_back(QuestItem(i));
                 if (!item.is_counted)
@@ -857,7 +900,7 @@ LootItem* Loot::LootItemInSlot(uint32 lootSlot, Player* player, QuestItem * *qit
                     }
             }
         }
-        else if (!item->conditions.empty())
+        else if (item->HasConditions())
         {
             QuestItemMap::const_iterator itr = PlayerNonQuestNonFFAConditionalItems.find(player->GetGUID());
             if (itr != PlayerNonQuestNonFFAConditionalItems.end())
@@ -898,7 +941,7 @@ bool Loot::hasItemForAll() const
     }
 
     for (LootItem const& item : items)
-        if (!item.is_looted && !item.freeforall && item.conditions.empty())
+        if (!item.is_looted && !item.freeforall && !item.HasConditions())
             return true;
     return false;
 }
@@ -1001,7 +1044,9 @@ ByteBuffer& operator<<(ByteBuffer& b, LootView const& lv)
                 // blocked rolled items and quest items, and !ffa items
                 for (uint8 i = 0; i < l.items.size(); ++i)
                 {
-                    if (!l.items[i].is_looted && !l.items[i].freeforall && (l.items[i].conditions.empty() || isMasterLooter) && l.items[i].AllowedForPlayer(lv.viewer, l.sourceWorldObjectGUID))
+                    if (!l.items[i].is_looted && !l.items[i].freeforall &&
+                        (!l.items[i].HasConditions() || isMasterLooter) &&
+                        l.items[i].AllowedForPlayer(lv.viewer, l.sourceWorldObjectGUID))
                     {
                         uint8 slot_type = 0;
 
@@ -1059,7 +1104,8 @@ ByteBuffer& operator<<(ByteBuffer& b, LootView const& lv)
             {
                 for (uint8 i = 0; i < l.items.size(); ++i)
                 {
-                    if (!l.items[i].is_looted && !l.items[i].freeforall && l.items[i].conditions.empty() && l.items[i].AllowedForPlayer(lv.viewer, l.sourceWorldObjectGUID))
+                    if (!l.items[i].is_looted && !l.items[i].freeforall && !l.items[i].HasConditions() &&
+                        l.items[i].AllowedForPlayer(lv.viewer, l.sourceWorldObjectGUID))
                     {
                         if (l.roundRobinPlayer && lv.viewer->GetGUID() != l.roundRobinPlayer)
                             // item shall not be displayed.
@@ -1078,7 +1124,8 @@ ByteBuffer& operator<<(ByteBuffer& b, LootView const& lv)
                 uint8 slot_type = lv.permission == OWNER_PERMISSION ? LOOT_SLOT_TYPE_OWNER : LOOT_SLOT_TYPE_ALLOW_LOOT;
                 for (uint8 i = 0; i < l.items.size(); ++i)
                 {
-                    if (!l.items[i].is_looted && !l.items[i].freeforall && l.items[i].conditions.empty() && l.items[i].AllowedForPlayer(lv.viewer, l.sourceWorldObjectGUID))
+                    if (!l.items[i].is_looted && !l.items[i].freeforall && !l.items[i].HasConditions() &&
+                        l.items[i].AllowedForPlayer(lv.viewer, l.sourceWorldObjectGUID))
                     {
                         b << uint8(i) << l.items[i];
                         b << uint8(slot_type);
