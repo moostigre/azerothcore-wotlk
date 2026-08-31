@@ -15,6 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "GameTime.h"
 #include "InstanceMapScript.h"
 #include "InstanceScript.h"
 #include "Player.h"
@@ -53,7 +54,15 @@ Position const MindlessUndeadPos = { 3941.75f, -3393.06f, 119.70f, 0.0f };
 Position const BarthilasPos = { 4068.74f, -3535.97f, 122.825f, 2.478367567062377929f };
 Position const SlaughterPos = { 4032.20f, -3378.06f, 119.75f, 4.67f };
 
-// uint32 m_uiGateTrapTimers[2][3] = { {0,0,0}, {0,0,0} };
+enum GateTrapIndexes
+{
+    GATE_TRAP_SCARLET,
+    GATE_TRAP_UNDEAD,
+    MAX_GATE_TRAPS
+};
+
+constexpr uint8 MAX_GATE_TRAP_GATES = 4;
+constexpr uint32 GATE_TRAP_COOLDOWN = 30 * MINUTE;
 
 class instance_stratholme : public InstanceMapScript
 {
@@ -80,6 +89,14 @@ public:
 
             _gateTrapsCooldown[0] = false;
             _gateTrapsCooldown[1] = false;
+            _gateTrapCooldownEnd[0] = 0;
+            _gateTrapCooldownEnd[1] = 0;
+
+            for (bool& needsRecovery : _gateTrapNeedsRecovery)
+                needsRecovery = true;
+
+            for (ObjectGuid& trappedPlayerGUID : _trappedPlayerGUIDs)
+                trappedPlayerGUID.Clear();
 
             events.Reset();
         }
@@ -100,7 +117,9 @@ public:
                     break;
                 case NPC_VENOM_BELCHER:
                 case NPC_BILE_SPEWER:
-                    if (_slaughterProgress == 0)
+                    // Dead spawns are still created while waiting for their respawn timer.
+                    // Do not count them again when rebuilding the event after a restart.
+                    if (_slaughterProgress == 0 && creature->IsAlive())
                         ++_slaughterNPCs;
                     break;
                 case NPC_RAMSTEIN_THE_GORGER:
@@ -162,11 +181,11 @@ public:
                 case NPC_RAMSTEIN_THE_GORGER:
                 case NPC_MINDLESS_UNDEAD:
                 case NPC_BLACK_GUARD:
-                    if (--_slaughterNPCs == 0)
+                    if (IsCurrentSlaughterTarget(unit->GetEntry()) && _slaughterNPCs && --_slaughterNPCs == 0)
                     {
                         ++_slaughterProgress;
-                        ProcessSlaughterEvent();
                         SaveToDB();
+                        ProcessSlaughterEvent();
                     }
                     break;
                 case NPC_BARON_RIVENDARE:
@@ -235,20 +254,16 @@ public:
                         go->SetGoState(GO_STATE_ACTIVE);
                     break;
                 case GO_PORT_TRAP_GATE_1:
-                    go->AllowSaveToDB(true);
-                    _trapGatesGUIDs[0] = go->GetGUID();
+                    HandleGateTrapCreate(go, 0);
                     break;
                 case GO_PORT_TRAP_GATE_2:
-                    go->AllowSaveToDB(true);
-                    _trapGatesGUIDs[1] = go->GetGUID();
+                    HandleGateTrapCreate(go, 1);
                     break;
                 case GO_PORT_TRAP_GATE_3:
-                    go->AllowSaveToDB(true);
-                    _trapGatesGUIDs[2] = go->GetGUID();
+                    HandleGateTrapCreate(go, 2);
                     break;
                 case GO_PORT_TRAP_GATE_4:
-                    go->AllowSaveToDB(true);
-                    _trapGatesGUIDs[3] = go->GetGUID();
+                    HandleGateTrapCreate(go, 3);
                     break;
                 default:
                     break;
@@ -386,6 +401,12 @@ public:
             {
                 events.ScheduleEvent(EVENT_FORCE_SLAUGHTER_EVENT, 5s);
             }
+
+            data >> _gateTrapCooldownEnd[GATE_TRAP_SCARLET];
+            data >> _gateTrapCooldownEnd[GATE_TRAP_UNDEAD];
+
+            RestoreGateTrapCooldown(GATE_TRAP_SCARLET);
+            RestoreGateTrapCooldown(GATE_TRAP_UNDEAD);
         }
 
         void WriteSaveDataMore(std::ostringstream& data) override
@@ -397,7 +418,9 @@ public:
                 << _zigguratState3 << ' '
                 << _slaughterProgress << ' '
                 << _postboxesOpened << ' '
-                << _barthilasrunProgress;
+                << _barthilasrunProgress << ' '
+                << _gateTrapCooldownEnd[GATE_TRAP_SCARLET] << ' '
+                << _gateTrapCooldownEnd[GATE_TRAP_UNDEAD];
         }
 
         uint32 GetData(uint32 type) const override
@@ -428,7 +451,7 @@ public:
             {
                 // if the gate is in cooldown, skip the other checks
                 if (_gateTrapsCooldown[i])
-                    break;
+                    continue;
 
                 // Check that the trap is not on cooldown, if so check if player/pet is in range
                 for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
@@ -438,38 +461,8 @@ public:
                         // should pet also trigger the trap? could not find any source for it
                         if (!player->IsGameMaster() && player->IsWithinDist2d(aGateTrap[i].m_positionX, aGateTrap[i].m_positionY, 5.5f))
                         {
-                            // Check if timer was not already set by another player/pet a few milliseconds before
-                            if (_gateTrapsCooldown[i])
-                                return;
-
-                            _gateTrapsCooldown[i] = true;
-
-                            // close the gates
-                            if (_trapGatesGUIDs[2 * i])
-                                DoUseDoorOrButton(_trapGatesGUIDs[2 * i]);
-                            if (_trapGatesGUIDs[2 * i + 1])
-                                DoUseDoorOrButton(_trapGatesGUIDs[2 * i + 1]);
-
-                            _trappedPlayerGUID = player->GetGUID();
-
-                            if (i == 0)
-                            {
-                                // set timer to reset the trap
-                                events.ScheduleEvent(EVENT_GATE1_TRAP, 1800s);
-                                // set timer to reopen gates
-                                events.ScheduleEvent(EVENT_GATE1_DELAY, 20s);
-                                // set timer to spawn the plagued critters
-                                events.ScheduleEvent(EVENT_GATE1_CRITTER_DELAY, 2s);
-                            }
-                            else if (i == 1)
-                            {
-                                // set timer to reset the trap
-                                events.ScheduleEvent(EVENT_GATE2_TRAP, 1800s);
-                                // set timer to reopen gates
-                                events.ScheduleEvent(EVENT_GATE2_DELAY, 20s);
-                                // set timer to spawn the plagued critters
-                                events.ScheduleEvent(EVENT_GATE2_CRITTER_DELAY, 2s);
-                            }
+                            StartGateTrap(i, player);
+                            break;
                         }
                     }
                 }
@@ -482,9 +475,13 @@ public:
             {
                 case EVENT_GATE1_TRAP:
                     _gateTrapsCooldown[GATE1] = false;
+                    _gateTrapCooldownEnd[GATE1] = 0;
+                    SaveToDB();
                     break;
                 case EVENT_GATE2_TRAP:
                     _gateTrapsCooldown[GATE2] = false;
+                    _gateTrapCooldownEnd[GATE2] = 0;
+                    SaveToDB();
                     break;
                 case EVENT_GATE1_DELAY:
                     gate_delay(GATE1);
@@ -608,27 +605,93 @@ public:
         ObjectGuid _baronRivendareGUID;
         ObjectGuid _barthilasGUID;
 
-        bool _gateTrapsCooldown[2];
-        ObjectGuid _trappedPlayerGUID;
-        ObjectGuid _trapGatesGUIDs[4];
+        bool _gateTrapsCooldown[MAX_GATE_TRAPS];
+        bool _gateTrapNeedsRecovery[MAX_GATE_TRAP_GATES];
+        time_t _gateTrapCooldownEnd[MAX_GATE_TRAPS];
+        ObjectGuid _trappedPlayerGUIDs[MAX_GATE_TRAPS];
+        ObjectGuid _trapGatesGUIDs[MAX_GATE_TRAP_GATES];
+
+        bool IsCurrentSlaughterTarget(uint32 entry) const
+        {
+            switch (_slaughterProgress)
+            {
+                case 0:
+                    return entry == NPC_VENOM_BELCHER || entry == NPC_BILE_SPEWER;
+                case 1:
+                    return entry == NPC_RAMSTEIN_THE_GORGER;
+                case 2:
+                    return entry == NPC_MINDLESS_UNDEAD;
+                case 3:
+                    return entry == NPC_BLACK_GUARD;
+                default:
+                    return false;
+            }
+        }
+
+        void HandleGateTrapCreate(GameObject* gate, uint8 index)
+        {
+            gate->AllowSaveToDB(true);
+            _trapGatesGUIDs[index] = gate->GetGUID();
+
+            // EventMap timers do not survive an instance unload. Finish an interrupted
+            // trap in its safe open state instead of restoring a permanently closed gate.
+            if (_gateTrapNeedsRecovery[index])
+            {
+                _gateTrapNeedsRecovery[index] = false;
+                gate->SetGoState(GO_STATE_ACTIVE);
+            }
+        }
+
+        void RestoreGateTrapCooldown(uint8 gate)
+        {
+            time_t now = GameTime::GetGameTime().count();
+            if (_gateTrapCooldownEnd[gate] <= now)
+            {
+                _gateTrapCooldownEnd[gate] = 0;
+                return;
+            }
+
+            _gateTrapsCooldown[gate] = true;
+            uint32 eventId = gate == GATE_TRAP_SCARLET ? EVENT_GATE1_TRAP : EVENT_GATE2_TRAP;
+            events.ScheduleEvent(eventId, Seconds(_gateTrapCooldownEnd[gate] - now));
+        }
+
+        void StartGateTrap(uint8 gate, Player* player)
+        {
+            _gateTrapsCooldown[gate] = true;
+            _gateTrapCooldownEnd[gate] = GameTime::GetGameTime().count() + GATE_TRAP_COOLDOWN;
+            _trappedPlayerGUIDs[gate] = player->GetGUID();
+
+            HandleGameObject(_trapGatesGUIDs[2 * gate], false);
+            HandleGameObject(_trapGatesGUIDs[2 * gate + 1], false);
+
+            if (gate == GATE_TRAP_SCARLET)
+            {
+                events.ScheduleEvent(EVENT_GATE1_TRAP, Seconds(GATE_TRAP_COOLDOWN));
+                events.ScheduleEvent(EVENT_GATE1_DELAY, 20s);
+                events.ScheduleEvent(EVENT_GATE1_CRITTER_DELAY, 2s);
+            }
+            else
+            {
+                events.ScheduleEvent(EVENT_GATE2_TRAP, Seconds(GATE_TRAP_COOLDOWN));
+                events.ScheduleEvent(EVENT_GATE2_DELAY, 20s);
+                events.ScheduleEvent(EVENT_GATE2_CRITTER_DELAY, 2s);
+            }
+
+            SaveToDB();
+        }
 
         void gate_delay(int gate)
         {
-            if (_trapGatesGUIDs[2 * gate])
-            {
-                DoUseDoorOrButton(_trapGatesGUIDs[2 * gate]);
-            }
-            if (_trapGatesGUIDs[2 * gate + 1])
-            {
-                DoUseDoorOrButton(_trapGatesGUIDs[2 * gate + 1]);
-            }
+            HandleGameObject(_trapGatesGUIDs[2 * gate], true);
+            HandleGameObject(_trapGatesGUIDs[2 * gate + 1], true);
         }
 
         void gate_critter_delay(int gate)
         {
-            if (_trappedPlayerGUID)
+            if (_trappedPlayerGUIDs[gate])
             {
-                if (Player* pPlayer = ObjectAccessor::GetPlayer(instance, _trappedPlayerGUID))
+                if (Player* pPlayer = ObjectAccessor::GetPlayer(instance, _trappedPlayerGUIDs[gate]))
                 {
                     DoSpawnPlaguedCritters(gate, pPlayer);
                 }
