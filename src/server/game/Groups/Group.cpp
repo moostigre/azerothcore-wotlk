@@ -64,6 +64,60 @@ Loot* Roll::getLoot()
     return getTarget();
 }
 
+void Roll::AddPlayerVote(ObjectGuid playerGuid, bool passOnLoot, bool canRoll)
+{
+    ++totalPlayersRolling;
+
+    RollVote vote = NOT_EMITED_YET;
+    if (passOnLoot || !canRoll)
+    {
+        vote = PASS;
+        ++totalPass;
+    }
+
+    playerVote[playerGuid] = vote;
+
+    // The client uses a different message for a voluntary automatic pass and
+    // a server-forced pass caused by the player being unable to loot the item.
+    if (!canRoll)
+        _autoPassPlayers.insert(playerGuid);
+}
+
+bool Roll::IsAutoPass(ObjectGuid playerGuid) const
+{
+    return _autoPassPlayers.contains(playerGuid);
+}
+
+bool Roll::IsComplete() const
+{
+    return totalPass + totalNeed + totalGreed >= totalPlayersRolling;
+}
+
+bool Roll::FinalizeIfAllPassed(LootItem& lootItem) const
+{
+    if (!totalPlayersRolling || totalPass != totalPlayersRolling)
+        return false;
+
+    lootItem.is_blocked = false;
+    return true;
+}
+
+std::vector<ObjectGuid> Roll::ResolvePendingVotesAsPass()
+{
+    std::vector<ObjectGuid> timedOutPlayers;
+    for (auto& [playerGuid, vote] : playerVote)
+    {
+        if (vote != NOT_EMITED_YET)
+            continue;
+
+        vote = PASS;
+        ++totalPass;
+        timedOutPlayers.push_back(playerGuid);
+    }
+
+    return timedOutPlayers;
+}
+
 static void SendRollWonItemViaMail(Player* player, LootItem const* lootItem, uint32 itemId)
 {
     Item* mailItem = Item::CreateItem(itemId, lootItem->count, player, false, lootItem->randomPropertyId);
@@ -1152,18 +1206,7 @@ void Group::GroupLoot(Loot* loot, WorldObject* pLootedObject)
                     canLoot = pLootedObject->HasAllowedLooter(member->GetGUID());
 
                 if (canLoot)
-                {
-                    r->totalPlayersRolling++;
-
-                    RollVote vote = member->GetPassOnGroupLoot() ? PASS : NOT_EMITED_YET;
-                    if (!CanRollOnItem(*i, member, loot))
-                    {
-                        vote = PASS;
-                        ++r->totalPass;
-                    }
-
-                    r->playerVote[member->GetGUID()] = vote;
-                }
+                    r->AddPlayerVote(member->GetGUID(), member->GetPassOnGroupLoot(), CanRollOnItem(*i, member, loot));
             }
 
             if (r->totalPlayersRolling > 0)
@@ -1185,12 +1228,15 @@ void Group::GroupLoot(Loot* loot, WorldObject* pLootedObject)
                             continue;
 
                         if (itr->second == PASS)
-                            SendLootRoll(newitemGUID, p->GetGUID(), 128, ROLL_PASS, *r, true);
+                            SendLootRoll(newitemGUID, p->GetGUID(), 128, ROLL_PASS, *r, r->IsAutoPass(p->GetGUID()));
                     }
                 }
 
-                if (r->totalPass == r->totalPlayersRolling)
+                if (r->FinalizeIfAllPassed(loot->items[itemSlot]))
+                {
+                    SendLootAllPassed(*r);
                     delete r;
+                }
                 else
                 {
                     SendLootStartRoll(60000, pLootedObject->GetMapId(), *r);
@@ -1242,17 +1288,7 @@ void Group::GroupLoot(Loot* loot, WorldObject* pLootedObject)
                 canLoot = pLootedObject->HasAllowedLooter(member->GetGUID());
 
             if (canLoot)
-            {
-                r->totalPlayersRolling++;
-
-                RollVote vote = NOT_EMITED_YET;
-                if (!CanRollOnItem(*i, member, loot))
-                {
-                    vote = PASS;
-                    ++r->totalPass;
-                }
-                r->playerVote[member->GetGUID()] = vote;
-            }
+                r->AddPlayerVote(member->GetGUID(), member->GetPassOnGroupLoot(), CanRollOnItem(*i, member, loot));
         }
 
         if (r->totalPlayersRolling > 0)
@@ -1262,19 +1298,34 @@ void Group::GroupLoot(Loot* loot, WorldObject* pLootedObject)
 
             loot->quest_items[itemSlot - loot->items.size()].is_blocked = true;
 
-            SendLootStartRoll(60000, pLootedObject->GetMapId(), *r);
-
-            RollId.push_back(r);
-
-            if (Creature* creature = pLootedObject->ToCreature())
+            for (Roll::PlayerVote::const_iterator itr = r->playerVote.begin(); itr != r->playerVote.end(); ++itr)
             {
-                creature->m_groupLootTimer = 60000;
-                creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                Player* player = ObjectAccessor::FindPlayer(itr->first);
+                if (player && itr->second == PASS)
+                    SendLootRoll(newitemGUID, player->GetGUID(), 128, ROLL_PASS, *r, r->IsAutoPass(player->GetGUID()));
             }
-            else if (GameObject* go = pLootedObject->ToGameObject())
+
+            if (r->FinalizeIfAllPassed(loot->quest_items[itemSlot - loot->items.size()]))
             {
-                go->m_groupLootTimer = 60000;
-                go->lootingGroupLowGUID = GetGUID().GetCounter();
+                SendLootAllPassed(*r);
+                delete r;
+            }
+            else
+            {
+                SendLootStartRoll(60000, pLootedObject->GetMapId(), *r);
+
+                RollId.push_back(r);
+
+                if (Creature* creature = pLootedObject->ToCreature())
+                {
+                    creature->m_groupLootTimer = 60000;
+                    creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                }
+                else if (GameObject* go = pLootedObject->ToGameObject())
+                {
+                    go->m_groupLootTimer = 60000;
+                    go->lootingGroupLowGUID = GetGUID().GetCounter();
+                }
             }
         }
         else
@@ -1310,18 +1361,8 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                     canLoot = lootedObject->HasAllowedLooter(playerToRoll->GetGUID());
 
                 if (canLoot)
-                {
-                    r->totalPlayersRolling++;
-
-                    RollVote vote = playerToRoll->GetPassOnGroupLoot() ? PASS : NOT_EMITED_YET;
-                    if (!CanRollOnItem(*i, playerToRoll, loot))
-                    {
-                        vote = PASS;
-                        r->totalPass++; // Can't broadcast the pass now. need to wait until all rolling players are known
-                    }
-
-                    r->playerVote[playerToRoll->GetGUID()] = vote;
-                }
+                    r->AddPlayerVote(playerToRoll->GetGUID(), playerToRoll->GetPassOnGroupLoot(),
+                        CanRollOnItem(*i, playerToRoll, loot));
             }
 
             if (r->totalPlayersRolling > 0)
@@ -1344,22 +1385,30 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                         continue;
 
                     if (itr->second == PASS)
-                        SendLootRoll(newitemGUID, p->GetGUID(), 128, ROLL_PASS, *r);
+                        SendLootRoll(newitemGUID, p->GetGUID(), 128, ROLL_PASS, *r, r->IsAutoPass(p->GetGUID()));
                     else
                         SendLootStartRollToPlayer(60000, lootedObject->GetMapId(), p, p->CanRollForItemInLFG(item, lootedObject) == EQUIP_ERR_OK, *r);
                 }
 
-                RollId.push_back(r);
-
-                if (Creature* creature = lootedObject->ToCreature())
+                if (r->FinalizeIfAllPassed(loot->items[itemSlot]))
                 {
-                    creature->m_groupLootTimer = 60000;
-                    creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                    SendLootAllPassed(*r);
+                    delete r;
                 }
-                else if (GameObject* go = lootedObject->ToGameObject())
+                else
                 {
-                    go->m_groupLootTimer = 60000;
-                    go->lootingGroupLowGUID = GetGUID().GetCounter();
+                    RollId.push_back(r);
+
+                    if (Creature* creature = lootedObject->ToCreature())
+                    {
+                        creature->m_groupLootTimer = 60000;
+                        creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                    }
+                    else if (GameObject* go = lootedObject->ToGameObject())
+                    {
+                        go->m_groupLootTimer = 60000;
+                        go->lootingGroupLowGUID = GetGUID().GetCounter();
+                    }
                 }
             }
             else
@@ -1385,18 +1434,8 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                 continue;
 
             if (playerToRoll->IsAtGroupRewardDistance(lootedObject))
-            {
-                r->totalPlayersRolling++;
-
-                RollVote vote = playerToRoll->GetPassOnGroupLoot() ? PASS : NOT_EMITED_YET;
-                if (!CanRollOnItem(*i, playerToRoll, loot))
-                {
-                    vote = PASS;
-                    r->totalPass++; // Can't broadcast the pass now. need to wait until all rolling players are known
-                }
-
-                r->playerVote[playerToRoll->GetGUID()] = vote;
-            }
+                r->AddPlayerVote(playerToRoll->GetGUID(), playerToRoll->GetPassOnGroupLoot(),
+                    CanRollOnItem(*i, playerToRoll, loot));
         }
 
         if (r->totalPlayersRolling > 0)
@@ -1414,22 +1453,30 @@ void Group::NeedBeforeGreed(Loot* loot, WorldObject* lootedObject)
                     continue;
 
                 if (itr->second == PASS)
-                    SendLootRoll(newitemGUID, p->GetGUID(), 128, ROLL_PASS, *r);
+                    SendLootRoll(newitemGUID, p->GetGUID(), 128, ROLL_PASS, *r, r->IsAutoPass(p->GetGUID()));
                 else
                     SendLootStartRollToPlayer(60000, lootedObject->GetMapId(), p, p->CanRollForItemInLFG(item, lootedObject) == EQUIP_ERR_OK, *r);
             }
 
-            RollId.push_back(r);
-
-            if (Creature* creature = lootedObject->ToCreature())
+            if (r->FinalizeIfAllPassed(loot->quest_items[itemSlot - loot->items.size()]))
             {
-                creature->m_groupLootTimer = 60000;
-                creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                SendLootAllPassed(*r);
+                delete r;
             }
-            else if (GameObject* go = lootedObject->ToGameObject())
+            else
             {
-                go->m_groupLootTimer = 60000;
-                go->lootingGroupLowGUID = GetGUID().GetCounter();
+                RollId.push_back(r);
+
+                if (Creature* creature = lootedObject->ToCreature())
+                {
+                    creature->m_groupLootTimer = 60000;
+                    creature->lootingGroupLowGUID = GetGUID().GetCounter();
+                }
+                else if (GameObject* go = lootedObject->ToGameObject())
+                {
+                    go->m_groupLootTimer = 60000;
+                    go->lootingGroupLowGUID = GetGUID().GetCounter();
+                }
             }
         }
         else
@@ -1502,12 +1549,11 @@ bool Group::CountRollVote(ObjectGuid playerGUID, ObjectGuid Guid, uint8 Choice)
     // this condition means that player joins to the party after roll begins
     // Xinef: if choice == MAX_ROLL_TYPE, player was removed from the map in removefromgroup
     // Xinef: itr can be invalid as it is not used below
-    if (Choice < MAX_ROLL_TYPE && itr == roll->playerVote.end())
+    if (Choice < MAX_ROLL_TYPE && (itr == roll->playerVote.end() || itr->second != NOT_EMITED_YET))
         return false;
 
-    if (roll->getLoot())
-        if (roll->getLoot()->items.empty())
-            return false;
+    if (Loot* loot = roll->getLoot(); loot && loot->items.empty() && loot->quest_items.empty())
+        return false;
 
     switch (Choice)
     {
@@ -1533,7 +1579,7 @@ bool Group::CountRollVote(ObjectGuid playerGUID, ObjectGuid Guid, uint8 Choice)
             break;
     }
 
-    if (roll->totalPass + roll->totalNeed + roll->totalGreed >= roll->totalPlayersRolling)
+    if (roll->IsComplete())
     {
         CountTheRoll(rollI);
         return true;
@@ -1548,7 +1594,10 @@ void Group::EndRoll(Loot* pLoot)
     {
         if ((*itr)->getLoot() == pLoot)
         {
-            CountTheRoll(itr);           //i don't have to edit player votes, who didn't vote ... he will pass
+            for (ObjectGuid const& playerGuid : (*itr)->ResolvePendingVotesAsPass())
+                SendLootRoll(ObjectGuid::Empty, playerGuid, 128, ROLL_PASS, **itr);
+
+            CountTheRoll(itr);
             itr = RollId.begin();
         }
         else
