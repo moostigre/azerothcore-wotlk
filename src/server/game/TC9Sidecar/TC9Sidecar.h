@@ -42,8 +42,9 @@ public:
     void Init(uint16 port, int realmId);
     void Deinit();
 
-    bool ClusterModeEnabled() { return _clusterModeEnabled; }
-    bool IsCrossrealm() { return _isCrossrealm; }
+    bool ClusterModeEnabled() const { return _clusterModeEnabled; }
+    bool SeamlessLayerSwitchEnabled() const { return _seamlessLayerSwitchEnabled; }
+    bool IsCrossrealm() const { return _isCrossrealm; }
 
     bool IsMapAssigned(uint32 mapId);
 
@@ -71,6 +72,7 @@ private:
     static void OnMapsReassigned(uint32* addedMaps, int addedMapsSize, uint32* removedMaps, int removedMapsSize);
 
     bool _clusterModeEnabled;
+    bool _seamlessLayerSwitchEnabled;
     bool _isCrossrealm;
 
     bool _assignedMapsByID[MAX_MAP_ID];
