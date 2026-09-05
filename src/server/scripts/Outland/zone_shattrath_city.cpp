@@ -161,7 +161,11 @@ public:
                 _scheduler.Schedule(1ms, [this](TaskContext /*task*/)
                 {
                     if (me->GetMotionMaster()->GetMotionSlotType(MOTION_SLOT_ACTIVE) == FOLLOW_MOTION_TYPE)
-                        me->GetMotionMaster()->MovementExpiredOnSlot(MOTION_SLOT_ACTIVE, false);
+                    {
+                        me->GetMotionMaster()->MovementExpiredOnSlot(MOTION_SLOT_ACTIVE);
+                        // Follow finalization clears movement state without stopping its spline.
+                        me->StopMoving();
+                    }
                 });
             }
         }
