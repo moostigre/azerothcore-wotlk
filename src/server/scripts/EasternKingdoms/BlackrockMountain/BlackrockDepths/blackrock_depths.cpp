@@ -1016,7 +1016,8 @@ struct npc_rocknot : public npc_escortAI
             me->NearTeleportTo(RocknotFinalPosition.GetPositionX(), RocknotFinalPosition.GetPositionY(),
                 RocknotFinalPosition.GetPositionZ(), RocknotFinalPosition.GetOrientation());
             me->SetHomePosition(RocknotFinalPosition);
-            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
+            me->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
             me->GetMotionMaster()->MoveIdle();
             me->setActive(false);
             return;
@@ -1040,7 +1041,8 @@ struct npc_rocknot : public npc_escortAI
         if (_lovePotionComplete)
         {
             me->setActive(false);
-            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
+            me->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
             me->GetMotionMaster()->MoveIdle();
         }
     }
@@ -1103,7 +1105,8 @@ struct npc_rocknot : public npc_escortAI
             _lovePotionComplete = true;
             me->SetHomePosition(me->GetPosition());
             me->GetMotionMaster()->MoveIdle();
-            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
+            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
+            me->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
             me->setActive(false);
         }
     }
