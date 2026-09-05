@@ -476,6 +476,12 @@ enum NagmaraTexts
     SAY_NAGMARA_AMBIENT = 0,
     SAY_NAGMARA_1 = 1,
     SAY_NAGMARA_2 = 2,
+    EMOTE_NAGMARA = 3
+};
+
+enum RocknotSays
+{
+    SAY_GOT_BEER = 0,
     EMOTE_ROCKNOT = 5
 };
 
@@ -805,6 +811,7 @@ struct npc_mistress_nagmara : public CreatureAI
                     {
                         me->SetFacingToObject(rocknot);
                         rocknot->SetFacingToObject(me);
+                        Talk(EMOTE_NAGMARA);
                         rocknot->AI()->Talk(EMOTE_ROCKNOT);
                         DoCast(me, SPELL_NAGMARA_ROCKNOT, true);
                         rocknot->CastSpell(rocknot, SPELL_NAGMARA_ROCKNOT, true);
@@ -984,11 +991,6 @@ private:
 };
 
 // npc_rocknot
-enum RocknotSays
-{
-    SAY_GOT_BEER                       = 0
-};
-
 enum RocknotSpells
 {
     SPELL_DRUNKEN_RAGE                 = 14872
