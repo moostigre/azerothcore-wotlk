@@ -560,6 +560,8 @@ Position const NagmaraPatrolPath[] =
 
 Position const NagmaraGreetingPosition = { 887.900f, -197.050f, -43.6204f };
 
+// Route coordinates adapted from Cala's CMaNGOS Grim Guzzler rework, with local doorway adjustments:
+// https://github.com/cmangos/mangos-classic/commit/7de311414b7eaf0b4017e6e0a6f9ff66a9c8caf0
 // Keep left of Phalanx (868.97, -224.979), wait for the doorway to open, and
 // follow the lower corner around the ramp masonry instead of cutting across it.
 Position const NagmaraLoversPath[] =
@@ -580,6 +582,7 @@ Position const NagmaraLoversPath[] =
 
 constexpr uint8 NAGMARA_DOOR_WAIT_POINT = 5;
 constexpr float NAGMARA_GREETING_DISTANCE = 14.0f;
+// Rocknot's final coordinates also come from the CMaNGOS route cited above.
 Position const RocknotFinalPosition = { 880.825f, -221.390f, -49.9562f, 3.3916268f };
 
 struct npc_mistress_nagmara : public CreatureAI
