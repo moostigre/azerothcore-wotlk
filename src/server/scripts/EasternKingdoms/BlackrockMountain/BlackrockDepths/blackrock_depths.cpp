@@ -653,7 +653,11 @@ struct npc_mistress_nagmara : public CreatureAI
 
         CloseGossipMenuFor(player);
 
-        if (!_instance || _instance->GetData(TYPE_BAR) != NOT_STARTED)
+        if (!_instance)
+            return;
+
+        uint32 const barState = _instance->GetData(TYPE_BAR);
+        if (barState != NOT_STARTED && barState != IN_PROGRESS)
             return;
 
         Creature* rocknot = me->FindNearestCreature(NPC_PRIVATE_ROCKNOT, 100.0f);
@@ -1242,7 +1246,9 @@ private:
         if (_lovePotionEvent || _aleEventStarted || !_instance || me->IsInCombat())
             return false;
 
-        if (_instance->GetData(TYPE_BAR) != NOT_STARTED)
+        // Partial ale hand-ins do not commit to the escort route; SPECIAL means it has started.
+        uint32 const barState = _instance->GetData(TYPE_BAR);
+        if (barState != NOT_STARTED && barState != IN_PROGRESS)
             return false;
 
         return _instance->instance->GetGameObject(_instance->GetGuidData(DATA_GO_BAR_DOOR));
