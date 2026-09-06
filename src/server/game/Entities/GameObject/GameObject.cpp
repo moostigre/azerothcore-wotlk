@@ -807,7 +807,10 @@ void GameObject::Update(uint32 diff)
                             m_cooldownTime = GameTime::GetGameTimeMS().count() + (goInfo->trap.cooldown ? goInfo->trap.cooldown : uint32(4)) * IN_MILLISECONDS; // template or 4 seconds
 
                             if (goInfo->trap.type == 1)
+                            {
                                 SetLootState(GO_JUST_DEACTIVATED);
+                                DeactivateLinkedTrapParent();
+                            }
                             else if (!goInfo->trap.type)
                                 SetLootState(GO_READY);
 
@@ -1537,7 +1540,10 @@ void GameObject::Use(Unit* user)
                 m_cooldownTime = GameTime::GetGameTimeMS().count() + (goInfo->trap.cooldown ? goInfo->trap.cooldown :  uint32(4)) * IN_MILLISECONDS; // template or 4 seconds
 
                 if (goInfo->trap.type == 1)         // Deactivate after trigger
+                {
                     SetLootState(GO_JUST_DEACTIVATED);
+                    DeactivateLinkedTrapParent();
+                }
 
                 return;
             }
@@ -2780,6 +2786,17 @@ bool GameObject::IsLinkedTrapParentSpawned() const
 
     GameObject* parent = ObjectAccessor::GetGameObject(*this, m_linkedTrapParent);
     return parent && parent->isSpawned() && parent->getLootState() != GO_JUST_DEACTIVATED;
+}
+
+void GameObject::DeactivateLinkedTrapParent()
+{
+    if (m_linkedTrapParent.IsEmpty())
+        return;
+
+    if (GameObject* parent = ObjectAccessor::GetGameObject(*this, m_linkedTrapParent))
+        if (parent->GetGoType() == GAMEOBJECT_TYPE_CHEST && parent->GetGOInfo()->chest.consumable &&
+            !parent->GetGOInfo()->chest.lootId)
+            parent->SetLootState(GO_JUST_DEACTIVATED);
 }
 
 void GameObject::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)

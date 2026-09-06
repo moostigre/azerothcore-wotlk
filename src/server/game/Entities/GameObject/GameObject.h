@@ -416,6 +416,7 @@ protected:
 
 private:
     bool IsLinkedTrapParentSpawned() const;
+    void DeactivateLinkedTrapParent();
     void CheckRitualList();
     void ClearRitualList();
     void RemoveFromOwner();
