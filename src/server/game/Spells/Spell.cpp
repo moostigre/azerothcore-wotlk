@@ -6351,9 +6351,7 @@ SpellCastResult Spell::CheckCast(bool strict, uint32* /*param1*/, uint32* /*para
                     {
                         GameObjectTemplate const* goInfo = go->GetGOInfo();
                         lockId = goInfo->GetLockId();
-                        bool const isTrapOnlyChest = goInfo->type == GAMEOBJECT_TYPE_CHEST &&
-                            !goInfo->chest.lootId && goInfo->chest.linkedTrapId;
-                        if (!lockId && !isTrapOnlyChest)
+                        if (!lockId)
                             return SPELL_FAILED_BAD_TARGETS;
                     }
                     else if (Item* itm = m_targets.GetItemTarget())
