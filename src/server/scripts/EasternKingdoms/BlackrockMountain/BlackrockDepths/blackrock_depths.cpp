@@ -488,7 +488,11 @@ struct npc_phalanx : public ScriptedAI
     void PathEndReached(uint32 pathId) override
     {
         if (pathId == PATH_PHALANX_DOOR && _state == PHALANX_STATE_MOVING_TO_DOOR)
+        {
             Activate();
+            // Zero-delay waypoints do not apply their facing; the sniff turns him after arrival.
+            me->SetFacingTo(me->GetHomePosition().GetOrientation());
+        }
     }
 
     void DoAction(int32 action) override
