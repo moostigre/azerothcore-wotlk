@@ -644,9 +644,11 @@ struct npc_rocknot : public npc_escortAI
         me->SetEmoteState(EMOTE_STATE_NONE);
     }
 
-    void sQuestReward(Player* /*player*/, Quest const* quest, uint32 /*opt*/) override
+    void sQuestReward(Player* player, Quest const* quest, uint32 /*opt*/) override
     {
         if (!_instance || quest->GetQuestId() != QUEST_ALE)
+            return;
+        if (HasEscortState(STATE_ESCORT_ESCORTING) || _aleComplete)
             return;
         if (_instance->GetData(TYPE_BAR) == DONE || _instance->GetData(TYPE_BAR) == SPECIAL)
             return;
@@ -664,7 +666,8 @@ struct npc_rocknot : public npc_escortAI
         SetDespawnAtFar(false);
         me->SetWalk(true);
         Start(false);
-        me->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
+        // Keep the escort's NPC flags cleared so WotLK rejects further quest interactions.
+        CloseGossipMenuFor(player);
         // Anniversary 69546 sends Uninteractible when the ale route begins.
         me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
         _events.ScheduleEvent(EVENT_ROCKNOT_MORE_ALE, 1500ms);
