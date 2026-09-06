@@ -600,6 +600,9 @@ void GameObject::Update(uint32 diff)
             }
         case GO_READY:
             {
+                if (!IsLinkedTrapParentSpawned())
+                    break;
+
                 if (m_respawnTime > 0)                          // timer on
                 {
                     time_t now = GameTime::GetGameTime().count();
@@ -786,6 +789,9 @@ void GameObject::Update(uint32 diff)
                         break;
                     case GAMEOBJECT_TYPE_TRAP:
                     {
+                        if (!IsLinkedTrapParentSpawned())
+                            break;
+
                         GameObjectTemplate const* goInfo = GetGOInfo();
                         if (goInfo->trap.type == 2)
                         {
@@ -1461,6 +1467,9 @@ void GameObject::SwitchDoorOrButton(bool activate, bool alternative /* = false *
 
 void GameObject::Use(Unit* user)
 {
+    if (!IsLinkedTrapParentSpawned())
+        return;
+
     // Xinef: we cannot use go with not selectable flags
     if (HasGameObjectFlag(GO_FLAG_NOT_SELECTABLE))
         return;
@@ -2760,6 +2769,15 @@ bool GameObject::IsLootAllowedFor(Player const* player) const
 GameObject* GameObject::GetLinkedTrap()
 {
     return ObjectAccessor::GetGameObject(*this, m_linkedTrap);
+}
+
+bool GameObject::IsLinkedTrapParentSpawned() const
+{
+    if (m_linkedTrapParent.IsEmpty())
+        return true;
+
+    GameObject* parent = ObjectAccessor::GetGameObject(*this, m_linkedTrapParent);
+    return parent && parent->isSpawned() && parent->getLootState() != GO_JUST_DEACTIVATED;
 }
 
 void GameObject::BuildValuesUpdate(uint8 updateType, ByteBuffer* data, Player* target)
