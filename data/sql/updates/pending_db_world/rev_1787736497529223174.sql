@@ -1,7 +1,6 @@
 -- Enchanted Scarlet Thread (175966) appears at four locations in a random,
 -- non-repeating order. The Stratholme instance script summons one at a time.
-DELETE FROM `pool_gameobject` WHERE `guid` IN (20872, 238, 239, 240, 241);
-DELETE FROM `gameobject` WHERE `guid` IN (20872, 238, 239, 240, 241);
+DELETE FROM `gameobject` WHERE `guid` = 20872 AND `id` = 175966;
 
 DELETE FROM `gameobject_summon_groups` WHERE `summonerId` = 329 AND `summonerType` = 2 AND `groupId` IN (0, 1, 2, 3);
 INSERT INTO `gameobject_summon_groups` (`summonerId`, `summonerType`, `groupId`, `entry`, `position_x`, `position_y`, `position_z`, `orientation`, `rotation0`, `rotation1`, `rotation2`, `rotation3`, `respawnTime`, `Comment`) VALUES
