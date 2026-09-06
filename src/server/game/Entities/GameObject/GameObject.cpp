@@ -1389,8 +1389,10 @@ void GameObject::TriggeringLinkedGameObject(uint32 trapEntry, Unit* target)
 
     // found correct GO
     // xinef: we should use the trap (checks for despawn type)
+    // Finish pending proximity activation before the caller consumes a trap-only chest.
     if (GameObject* trapGO = GetLinkedTrap())
-        if (trapGO->isSpawned() && trapGO->getLootState() == GO_READY)
+        if (trapGO->isSpawned() && (trapGO->getLootState() == GO_READY ||
+            (trapInfo->trap.type == 1 && trapGO->getLootState() == GO_ACTIVATED)))
             trapGO->Use(target); // trapGO->CastSpell(target, trapInfo->trap.spellId);
 }
 
