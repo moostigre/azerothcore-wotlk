@@ -22,13 +22,13 @@ UPDATE `creature` SET `position_x` = -274.3799,
     `position_y` = 1174.073,
     `position_z` = 83.321175,
     `orientation` = 3.1407077
-WHERE `guid` = 74081 AND `id1` = 21075;
+WHERE `guid` = 74081 AND `id` = 21075;
 
 UPDATE `creature` SET `position_x` = -216.51663,
     `position_y` = 1173.5674,
     `position_z` = 83.321175,
     `orientation` = 4.703648
-WHERE `guid` = 74082 AND `id1` = 21075;
+WHERE `guid` = 74082 AND `id` = 21075;
 
 DELETE FROM `creature_template_movement` WHERE `CreatureId` = 21075;
 INSERT INTO `creature_template_movement`
@@ -469,7 +469,7 @@ WITH `mk` AS (
                 WHEN `position_y` >= 1096 THEN 'front'
                 ELSE 'mid' END AS `band`
     FROM `creature`
-    WHERE `map` = 530 AND `id1` = 19179
+    WHERE `map` = 530 AND `id` = 19179
       AND `position_x` BETWEEN -280 AND -220 AND `position_y` BETWEEN 1065 AND 1100
 ), `platrk` AS (
     SELECT
@@ -485,20 +485,20 @@ WITH `mk` AS (
         `guid`, `side`, `role`, ROW_NUMBER() OVER (PARTITION BY `side`, `role` ORDER BY `x`) AS `rn`
     FROM `mkrole`
 ), `un` AS (
-    SELECT `guid`, `id1`, `position_x` AS `x`,
+    SELECT `guid`, `id`, `position_x` AS `x`,
            CASE WHEN `position_x` <= -250 THEN 'A' ELSE 'H' END AS `side`,
-           CASE `id1`
+           CASE `id`
                 WHEN 18948 THEN 'front' WHEN 18986 THEN 'mid' WHEN 18965 THEN 'ramp'
                 WHEN 18949 THEN 'mage'  WHEN 18966 THEN 'cmd'
                 WHEN 18950 THEN 'front' WHEN 18972 THEN 'mid' WHEN 18970 THEN 'ramp'
                 WHEN 18971 THEN 'mage'  WHEN 18969 THEN 'cmd' END AS `role`
     FROM `creature`
     WHERE `map` = 530
-      AND `id1` IN (18948,18986,18965,18949,18966,18950,18972,18970,18971,18969)
+      AND `id` IN (18948,18986,18965,18949,18966,18950,18972,18970,18971,18969)
       AND `position_x` BETWEEN -290 AND -210 AND `position_y` BETWEEN 1065 AND 1105
 ), `unflt` AS (
     -- drop the lone boundary grunt on the Alliance side (no Horde-melee marker there)
-    SELECT * FROM `un` WHERE NOT (`id1` = 18950 AND `side` = 'A')
+    SELECT * FROM `un` WHERE NOT (`id` = 18950 AND `side` = 'A')
 ), `unn` AS (
     SELECT
         `guid`, `side`, `role`, ROW_NUMBER() OVER (PARTITION BY `side`, `role` ORDER BY `x`) AS `rn`
@@ -514,14 +514,14 @@ CREATE TEMPORARY TABLE `tmp_dp_used` AS
 SELECT DISTINCT `marker_guid` FROM `tmp_dp_assign`;
 
 -- Clear any existing formation rows for these army units and markers.
-DELETE FROM `creature_formations` WHERE `leaderGUID` IN ( SELECT `guid` FROM `creature` WHERE `map` = 530 AND `id1` = 19179 AND `position_x` BETWEEN -280 AND -220 AND `position_y` BETWEEN 1065 AND 1100 );
+DELETE FROM `creature_formations` WHERE `leaderGUID` IN ( SELECT `guid` FROM `creature` WHERE `map` = 530 AND `id` = 19179 AND `position_x` BETWEEN -280 AND -220 AND `position_y` BETWEEN 1065 AND 1100 );
 -- Leader self-rows (a formation only activates when its leader is present as a member).
 INSERT INTO `creature_formations`
 (`leaderGUID`, `memberGUID`, `dist`, `angle`, `groupAI`, `point_1`, `point_2`)
 SELECT `marker_guid`, `marker_guid`, 0, 0, @FORMATION_FLAGS, 0, 0 FROM `tmp_dp_used`;
 
 -- Member rows: each unit pinned (dist 0) onto its own role-matched marker.
-DELETE FROM `creature_formations` WHERE `memberGUID` IN ( SELECT `guid` FROM `creature` WHERE `map` = 530 AND `id1` IN (18948,18949,18950,18965,18966,18969,18970,18971,18972,18986) AND `position_x` BETWEEN -290 AND -210 AND `position_y` BETWEEN 1065 AND 1105 );
+DELETE FROM `creature_formations` WHERE `memberGUID` IN ( SELECT `guid` FROM `creature` WHERE `map` = 530 AND `id` IN (18948,18949,18950,18965,18966,18969,18970,18971,18972,18986) AND `position_x` BETWEEN -290 AND -210 AND `position_y` BETWEEN 1065 AND 1105 );
 INSERT INTO `creature_formations`
 (`leaderGUID`, `memberGUID`, `dist`, `angle`, `groupAI`, `point_1`, `point_2`)
 SELECT `marker_guid`, `member_guid`, 0, 0, @FORMATION_FLAGS, 0, 0 FROM `tmp_dp_assign`;
@@ -577,7 +577,7 @@ UPDATE `creature` SET `map` = 530,
     `MovementType` = 0,
     `curhealth` = 143620,
     `Comment` = 'GUID SAI'
-WHERE `guid` = 68311 AND `id1` = 19005;
+WHERE `guid` = 68311 AND `id` = 19005;
 
 UPDATE `creature` SET `map` = 530,
     `zoneId` = 3483,
@@ -593,7 +593,7 @@ UPDATE `creature` SET `map` = 530,
     `MovementType` = 0,
     `curhealth` = 143620,
     `Comment` = 'GUID SAI'
-WHERE `guid` = 68312 AND `id1` = 19005;
+WHERE `guid` = 68312 AND `id` = 19005;
 
 UPDATE `creature` SET `map` = 530,
     `zoneId` = 3483,
@@ -609,7 +609,7 @@ UPDATE `creature` SET `map` = 530,
     `MovementType` = 0,
     `curhealth` = 143620,
     `Comment` = 'GUID SAI'
-WHERE `guid` = 68313 AND `id1` = 19005;
+WHERE `guid` = 68313 AND `id` = 19005;
 
 UPDATE `creature` SET `map` = 530,
     `zoneId` = 3483,
@@ -625,7 +625,7 @@ UPDATE `creature` SET `map` = 530,
     `MovementType` = 0,
     `curhealth` = 143620,
     `Comment` = 'GUID SAI'
-WHERE `guid` = 68314 AND `id1` = 19005;
+WHERE `guid` = 68314 AND `id` = 19005;
 
 DELETE FROM `waypoint_data` WHERE `id` IN (68311, 68312, 68313, 68314);
 INSERT INTO `waypoint_data`
