@@ -25,6 +25,7 @@
 #include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
+#include "WaypointMgr.h"
 
 enum IronhandData
 {
@@ -399,84 +400,95 @@ struct npc_grimstone : public npc_escortAI
 };
 
 // npc_phalanx
+// Cala's CMaNGOS Grim Guzzler rework established the corner/door staging:
+// https://github.com/cmangos/mangos-wotlk/commit/563770518af7
+// The route and spell IDs below are checked against Anniversary build 69546.
 enum PhalanxSpells
 {
-    SPELL_THUNDERCLAP                   = 8732,
-    SPELL_FIREBALLVOLLEY                = 22425,
-    SPELL_MIGHTYBLOW                    = 14099
+    SPELL_THUNDERCLAP = 15588,
+    SPELL_FIREBALLVOLLEY = 15285,
+    SPELL_MIGHTYBLOW = 14099
 };
 
 enum PhalanxTexts
 {
-    SAY_PHALANX_AGGRO                   = 0
-};
-
-enum PhalanxPoints
-{
-    POINT_PHALANX_DOOR                  = 1
+    SAY_PHALANX_AGGRO = 0
 };
 
 enum PhalanxActions
 {
-    ACTION_PHALANX_START_ACTIVATION     = 1
+    ACTION_PHALANX_START_ACTIVATION = 1
+};
+
+enum PhalanxEvents
+{
+    EVENT_PHALANX_YELL = 1,
+    EVENT_PHALANX_FINISH_MOVEMENT,
+    EVENT_PHALANX_THUNDERCLAP,
+    EVENT_PHALANX_MIGHTY_BLOW,
+    EVENT_PHALANX_FIREBALL_VOLLEY
 };
 
 enum PhalanxStates
 {
     PHALANX_STATE_DORMANT,
     PHALANX_STATE_MOVING_TO_DOOR,
-    PHALANX_STATE_WAITING_TO_ACTIVATE,
     PHALANX_STATE_ACTIVE
 };
 
-constexpr UnitFlags PHALANX_STATUE_FLAGS = UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_DISABLE_MOVE;
-constexpr uint32 PHALANX_DOOR_MOVE_RETRY_TIMER = 12000;
-constexpr uint8 PHALANX_DOOR_MOVE_MAX_ATTEMPTS = 2;
-constexpr uint32 PHALANX_ACTIVATION_DELAY = 3000;
-
-Position const PhalanxDoorPosition = { 868.122f, -223.884f, -43.695f, 2.06059f };
+enum PhalanxData
+{
+    PATH_PHALANX_DOOR = 95020,
+    FACTION_PHALANX_HOSTILE = 54
+};
 
 struct npc_phalanx : public ScriptedAI
 {
     npc_phalanx(Creature* creature) : ScriptedAI(creature),
-        _instance(creature->GetInstanceScript()), _state(PHALANX_STATE_DORMANT),
-        _doorMoveRetryTimer(0), _activationTimer(0), _doorMoveAttempts(0) { }
+        _instance(creature->GetInstanceScript()), _state(PHALANX_STATE_DORMANT), _volleyStarted(false) { }
 
     void Reset() override
     {
-        _thunderClapTimer = 12000;
-        _fireballVolleyTimer = 0;
-        _mightyBlowTimer = 15000;
+        _combatEvents.Reset();
+        _stagingEvents.Reset();
+        _volleyStarted = false;
 
-        bool const activationRequested = _state != PHALANX_STATE_DORMANT || me->GetFaction() == FACTION_MONSTER ||
-            (_instance && (_instance->GetData(TYPE_BAR) == DONE ||
-                _instance->GetData(DATA_PHALANX_ACTIVATED) == DONE));
-
-        if (activationRequested)
+        bool const restoring = _state == PHALANX_STATE_DORMANT && _instance &&
+            _instance->GetData(DATA_PHALANX_ACTIVATED) == DONE;
+        if (_state != PHALANX_STATE_DORMANT || restoring)
         {
-            if (me->GetDistance(PhalanxDoorPosition) > 1.0f)
-                StartActivation();
-            else
-                Activate();
+            Activate();
+            // An evade already has a home movement. A newly loaded creature needs one,
+            // but must not replay the announcement or become friendly again.
+            if (restoring)
+                me->GetMotionMaster()->MoveTargetedHome();
         }
         else
-            Deactivate();
+        {
+            me->RestoreFaction();
+            me->SetReactState(REACT_AGGRESSIVE);
+        }
     }
 
-    void MovementInform(uint32 type, uint32 id) override
+    void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override
     {
-        if (type != POINT_MOTION_TYPE)
-            return;
+        // Waypoint movement updates home at each node. Evading during the run
+        // must still return to the final guard position.
+        if (_state != PHALANX_STATE_DORMANT)
+            SetDoorHome();
+        ScriptedAI::EnterEvadeMode(why);
+    }
 
-        switch (id)
-        {
-            case POINT_PHALANX_DOOR:
-                if (_state == PHALANX_STATE_MOVING_TO_DOOR)
-                    FinishDoorMovement();
-                break;
-            default:
-                break;
-        }
+    void JustEngagedWith(Unit* /*who*/) override
+    {
+        _combatEvents.ScheduleEvent(EVENT_PHALANX_THUNDERCLAP, 12s);
+        _combatEvents.ScheduleEvent(EVENT_PHALANX_MIGHTY_BLOW, 15s);
+    }
+
+    void PathEndReached(uint32 pathId) override
+    {
+        if (pathId == PATH_PHALANX_DOOR && _state == PHALANX_STATE_MOVING_TO_DOOR)
+            Activate();
     }
 
     void DoAction(int32 action) override
@@ -487,292 +499,273 @@ struct npc_phalanx : public ScriptedAI
 
     void UpdateAI(uint32 diff) override
     {
-        // Keep the faction-change fallback for legacy activation effects such as
-        // Plugger's death. Rocknot uses DoAction to avoid a transient aggro race.
-        if (_state == PHALANX_STATE_DORMANT)
-        {
-            if (me->GetFaction() != FACTION_MONSTER)
-                return;
-
+        // Preserve the existing Plugger activation hook.
+        if (_state == PHALANX_STATE_DORMANT && me->GetFaction() == FACTION_MONSTER)
             StartActivation();
-        }
 
-        if (_state == PHALANX_STATE_MOVING_TO_DOOR)
+        _stagingEvents.Update(diff);
+        while (uint32 eventId = _stagingEvents.ExecuteEvent())
         {
-            // Bar hostility effects can still change Phalanx's faction while the
-            // door event is running. Keep him protected until he reaches his point.
-            me->SetFaction(FACTION_FRIEND);
-            me->SetReactState(REACT_PASSIVE);
-            me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE);
-            me->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE);
-
-            if (_doorMoveRetryTimer <= diff)
-            {
-                _doorMoveRetryTimer = 0;
-
-                if (me->GetDistance(PhalanxDoorPosition) <= 1.0f)
-                    FinishDoorMovement();
-                else if (_doorMoveAttempts < PHALANX_DOOR_MOVE_MAX_ATTEMPTS)
-                    MoveToDoor();
-                else
-                {
-                    me->GetMotionMaster()->Clear();
-                    me->NearTeleportTo(PhalanxDoorPosition.GetPositionX(), PhalanxDoorPosition.GetPositionY(),
-                        PhalanxDoorPosition.GetPositionZ(), PhalanxDoorPosition.GetOrientation());
-                    FinishDoorMovement();
-                }
-            }
-            else
-                _doorMoveRetryTimer -= diff;
-
-            return;
-        }
-
-        if (_state == PHALANX_STATE_WAITING_TO_ACTIVATE)
-        {
-            me->SetFaction(FACTION_FRIEND);
-            me->SetReactState(REACT_PASSIVE);
-            me->SetUnitFlag(PHALANX_STATUE_FLAGS);
-
-            if (_activationTimer <= diff)
+            if (eventId == EVENT_PHALANX_YELL)
+                Talk(SAY_PHALANX_AGGRO);
+            else if (eventId == EVENT_PHALANX_FINISH_MOVEMENT)
+                // A blocked route must not leave him permanently passive or teleport him.
                 Activate();
-            else
-                _activationTimer -= diff;
-
-            return;
         }
 
-        if (_state != PHALANX_STATE_ACTIVE)
+        if (_state != PHALANX_STATE_ACTIVE || !UpdateVictim())
             return;
 
-        if (!UpdateVictim())
+        _combatEvents.Update(diff);
+        if (me->HasUnitState(UNIT_STATE_CASTING))
             return;
 
-        if (_thunderClapTimer <= diff)
+        if (!_volleyStarted && HealthBelowPct(51))
         {
-            DoCastVictim(SPELL_THUNDERCLAP);
-            _thunderClapTimer = 10000;
+            _volleyStarted = true;
+            _combatEvents.ScheduleEvent(EVENT_PHALANX_FIREBALL_VOLLEY, 1ms);
         }
-        else _thunderClapTimer -= diff;
 
-        if (HealthBelowPct(51))
+        while (uint32 eventId = _combatEvents.ExecuteEvent())
         {
-            if (_fireballVolleyTimer <= diff)
+            switch (eventId)
             {
-                DoCastVictim(SPELL_FIREBALLVOLLEY);
-                _fireballVolleyTimer = 15000;
+                case EVENT_PHALANX_THUNDERCLAP:
+                    _combatEvents.ScheduleEvent(eventId,
+                        DoCastSelf(SPELL_THUNDERCLAP) == SPELL_CAST_OK ? 10s : 500ms);
+                    break;
+                case EVENT_PHALANX_MIGHTY_BLOW:
+                    _combatEvents.ScheduleEvent(eventId,
+                        DoCastVictim(SPELL_MIGHTYBLOW) == SPELL_CAST_OK ? 10s : 500ms);
+                    break;
+                case EVENT_PHALANX_FIREBALL_VOLLEY:
+                    _combatEvents.ScheduleEvent(eventId,
+                        HealthBelowPct(51) && DoCastSelf(SPELL_FIREBALLVOLLEY) == SPELL_CAST_OK ? 10s : 500ms);
+                    break;
             }
-            else _fireballVolleyTimer -= diff;
         }
-
-        if (_mightyBlowTimer <= diff)
-        {
-            DoCastVictim(SPELL_MIGHTYBLOW);
-            _mightyBlowTimer = 10000;
-        }
-        else _mightyBlowTimer -= diff;
-
         DoMeleeAttackIfReady();
     }
 
 private:
+    void SetDoorHome()
+    {
+        if (WaypointPath const* path = sWaypointMgr->GetPath(PATH_PHALANX_DOOR); path && !path->Nodes.empty())
+        {
+            WaypointNode const& node = path->Nodes.back();
+            me->SetHomePosition(node.X, node.Y, node.Z, node.Orientation.value_or(me->GetOrientation()));
+        }
+    }
+
     void StartActivation()
     {
-        if (_instance && _instance->GetData(DATA_PHALANX_ACTIVATED) != DONE)
+        _state = PHALANX_STATE_MOVING_TO_DOOR;
+        SetDoorHome();
+        if (_instance)
             _instance->SetData(DATA_PHALANX_ACTIVATED, DONE);
 
-        _state = PHALANX_STATE_MOVING_TO_DOOR;
-        me->CombatStop(true);
-        me->SetFaction(FACTION_FRIEND);
+        // The sniff retains interaction during staging, changes faction on arrival,
+        // and announces the event shortly after starting the run.
         me->SetReactState(REACT_PASSIVE);
-        me->SetUnitFlag(PHALANX_STATUE_FLAGS);
-        me->RemoveUnitFlag(UNIT_FLAG_DISABLE_MOVE);
-        me->SetWalk(true);
-        _doorMoveAttempts = 0;
-        MoveToDoor();
-    }
-
-    void MoveToDoor()
-    {
-        ++_doorMoveAttempts;
-        _doorMoveRetryTimer = PHALANX_DOOR_MOVE_RETRY_TIMER;
-        me->GetMotionMaster()->Clear();
-        me->GetMotionMaster()->MovePoint(POINT_PHALANX_DOOR, PhalanxDoorPosition);
-    }
-
-    void FinishDoorMovement()
-    {
-        _state = PHALANX_STATE_WAITING_TO_ACTIVATE;
-        _doorMoveRetryTimer = 0;
-        _activationTimer = PHALANX_ACTIVATION_DELAY;
-        me->StopMoving();
-        me->SetHomePosition(PhalanxDoorPosition);
-        me->SetFacingTo(PhalanxDoorPosition.GetOrientation());
-        Talk(SAY_PHALANX_AGGRO);
+        me->SetWalk(false);
+        me->GetMotionMaster()->MoveWaypoint(PATH_PHALANX_DOOR, false);
+        _stagingEvents.ScheduleEvent(EVENT_PHALANX_YELL, 200ms);
+        _stagingEvents.ScheduleEvent(EVENT_PHALANX_FINISH_MOVEMENT, 15s);
     }
 
     void Activate()
     {
         _state = PHALANX_STATE_ACTIVE;
-        _activationTimer = 0;
-        me->SetWalk(false);
-        me->SetFaction(FACTION_MONSTER);
-        me->RemoveUnitFlag(PHALANX_STATUE_FLAGS);
+        _stagingEvents.CancelEvent(EVENT_PHALANX_FINISH_MOVEMENT);
+        SetDoorHome();
+        me->SetFaction(FACTION_PHALANX_HOSTILE);
         me->SetReactState(REACT_AGGRESSIVE);
-    }
-
-    void Deactivate()
-    {
-        _state = PHALANX_STATE_DORMANT;
-        _doorMoveRetryTimer = 0;
-        _activationTimer = 0;
-        _doorMoveAttempts = 0;
-        me->CombatStop(true);
-        me->SetFaction(FACTION_FRIEND);
-        me->SetReactState(REACT_PASSIVE);
-        me->SetUnitFlag(PHALANX_STATUE_FLAGS);
-        me->StopMoving();
-        me->GetMotionMaster()->MoveIdle();
     }
 
     InstanceScript* _instance;
     PhalanxStates _state;
-    uint32 _doorMoveRetryTimer;
-    uint32 _activationTimer;
-    uint8 _doorMoveAttempts;
-    uint32 _thunderClapTimer;
-    uint32 _fireballVolleyTimer;
-    uint32 _mightyBlowTimer;
+    EventMap _stagingEvents;
+    EventMap _combatEvents;
+    bool _volleyStarted;
 };
 
 // npc_rocknot
 enum RocknotSays
 {
-    SAY_GOT_BEER                       = 0
-};
-
-enum RocknotSpells
-{
-    SPELL_DRUNKEN_RAGE                 = 14872
+    SAY_GOT_BEER = 0,
+    SAY_MORE_ALE = 1,
+    SAY_FIRST_EMPTY = 2,
+    SAY_SECOND_EMPTY = 3,
+    SAY_ALE = 4
 };
 
 enum RocknotQuests
 {
-    QUEST_ALE                          = 4295
+    QUEST_ALE = 4295
+};
+
+enum RocknotEvents
+{
+    EVENT_ROCKNOT_MORE_ALE = 1,
+    EVENT_ROCKNOT_PUNCH,
+    EVENT_ROCKNOT_SECOND_KEG,
+    EVENT_ROCKNOT_FINAL_KEG,
+    EVENT_ROCKNOT_ALE,
+    EVENT_ROCKNOT_BREAK_KEG,
+    EVENT_ROCKNOT_BREAK_DOOR
+};
+
+enum RocknotPoints
+{
+    POINT_ROCKNOT_FIRST_KEG = 2,
+    POINT_ROCKNOT_LEAVE_FIRST_KEG = 3,
+    POINT_ROCKNOT_SECOND_KEG = 4,
+    POINT_ROCKNOT_LEAVE_SECOND_KEG = 5,
+    POINT_ROCKNOT_FINAL_KEG = 7
 };
 
 struct npc_rocknot : public npc_escortAI
 {
-    npc_rocknot(Creature* creature) : npc_escortAI(creature)
-    {
-        instance = creature->GetInstanceScript();
-    }
+    npc_rocknot(Creature* creature) : npc_escortAI(creature),
+        _instance(creature->GetInstanceScript()), _aleComplete(false) { }
 
     void Reset() override
     {
         if (HasEscortState(STATE_ESCORT_ESCORTING))
             return;
 
-        _breakKegTimer = 0;
-        _breakDoorTimer = 0;
+        _events.Reset();
+        if (_aleComplete)
+        {
+            me->SetEmoteState(EMOTE_STATE_STUN);
+            return;
+        }
+        me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+        me->SetEmoteState(EMOTE_STATE_NONE);
     }
 
     void sQuestReward(Player* /*player*/, Quest const* quest, uint32 /*opt*/) override
     {
-        if (!instance)
+        if (!_instance || quest->GetQuestId() != QUEST_ALE)
+            return;
+        if (_instance->GetData(TYPE_BAR) == DONE || _instance->GetData(TYPE_BAR) == SPECIAL)
             return;
 
-        if (instance->GetData(TYPE_BAR) == DONE || instance->GetData(TYPE_BAR) == SPECIAL)
+        // Both captured hand-ins have the drinking emote and acknowledgement.
+        me->HandleEmoteCommand(EMOTE_ONESHOT_EAT_NO_SHEATHE);
+        Talk(SAY_GOT_BEER);
+        if (_instance->GetData(TYPE_BAR) != IN_PROGRESS)
+            _instance->SetData(TYPE_BAR, IN_PROGRESS);
+        _instance->SetData(TYPE_BAR, SPECIAL);
+        if (_instance->GetData(TYPE_BAR) != SPECIAL)
             return;
 
-        if (quest->GetQuestId() == QUEST_ALE)
-        {
-            if (instance->GetData(TYPE_BAR) != IN_PROGRESS)
-                instance->SetData(TYPE_BAR, IN_PROGRESS);
-
-            instance->SetData(TYPE_BAR, SPECIAL);
-
-            //keep track of amount in instance script, returns SPECIAL if amount ok and event in progress
-            if (instance->GetData(TYPE_BAR) == SPECIAL)
-            {
-                Talk(SAY_GOT_BEER);
-                me->CastSpell(me, SPELL_DRUNKEN_RAGE, false);
-                me->SetWalk(true);
-                Start(false);
-            }
-        }
+        SetDespawnAtEnd(false);
+        SetDespawnAtFar(false);
+        me->SetWalk(true);
+        Start(false);
+        me->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
+        // Anniversary 69546 sends Uninteractible when the ale route begins.
+        me->SetUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+        _events.ScheduleEvent(EVENT_ROCKNOT_MORE_ALE, 1500ms);
     }
 
-    void DoGo(uint32 id, uint32 state)
+    void WaypointStart(uint32 pointId) override
     {
-        if (GameObject* go = instance->instance->GetGameObject(instance->GetGuidData(id)))
-            go->SetGoState((GOState)state);
+        if (pointId == POINT_ROCKNOT_LEAVE_FIRST_KEG)
+        {
+            me->HandleEmoteCommand(EMOTE_ONESHOT_EXCLAMATION);
+            Talk(SAY_FIRST_EMPTY);
+        }
+        else if (pointId == POINT_ROCKNOT_LEAVE_SECOND_KEG)
+        {
+            me->HandleEmoteCommand(EMOTE_ONESHOT_EXCLAMATION);
+            Talk(SAY_SECOND_EMPTY);
+        }
     }
 
     using CreatureAI::WaypointReached;
-    void WaypointReached(uint32 waypointId) override
+    void WaypointReached(uint32 pointId) override
     {
-        switch (waypointId)
+        switch (pointId)
         {
-            case 1:
-                me->HandleEmoteCommand(EMOTE_ONESHOT_KICK);
+            case POINT_ROCKNOT_FIRST_KEG:
+                _events.ScheduleEvent(EVENT_ROCKNOT_PUNCH, 1500ms);
+                _events.ScheduleEvent(EVENT_ROCKNOT_PUNCH, 3100ms);
                 break;
-            case 2:
-                me->HandleEmoteCommand(EMOTE_ONESHOT_ATTACK_UNARMED);
+            case POINT_ROCKNOT_SECOND_KEG:
+                _events.ScheduleEvent(EVENT_ROCKNOT_SECOND_KEG, 1500ms);
                 break;
-            case 3:
-                me->HandleEmoteCommand(EMOTE_ONESHOT_ATTACK_UNARMED);
-                break;
-            case 4:
-                me->HandleEmoteCommand(EMOTE_ONESHOT_KICK);
-                break;
-            case 5:
-                me->HandleEmoteCommand(EMOTE_ONESHOT_KICK);
-                _breakKegTimer = 2000;
+            case POINT_ROCKNOT_FINAL_KEG:
+                SetEscortPaused(true);
+                _events.ScheduleEvent(EVENT_ROCKNOT_FINAL_KEG, 300ms);
+                _events.ScheduleEvent(EVENT_ROCKNOT_PUNCH, 1900ms);
+                _events.ScheduleEvent(EVENT_ROCKNOT_PUNCH, 3500ms);
+                _events.ScheduleEvent(EVENT_ROCKNOT_ALE, 3700ms);
+                _events.ScheduleEvent(EVENT_ROCKNOT_BREAK_KEG, 5100ms);
                 break;
         }
     }
 
-    void UpdateAI(uint32 diff) override
+    void UpdateEscortAI(uint32 diff) override
     {
-        if (_breakKegTimer)
+        _events.Update(diff);
+        while (uint32 eventId = _events.ExecuteEvent())
         {
-            if (_breakKegTimer <= diff)
+            switch (eventId)
             {
-                DoGo(DATA_GO_BAR_KEG, 0);
-                _breakKegTimer = 0;
-                _breakDoorTimer = 1000;
+                case EVENT_ROCKNOT_MORE_ALE:
+                    Talk(SAY_MORE_ALE);
+                    break;
+                case EVENT_ROCKNOT_PUNCH:
+                    me->HandleEmoteCommand(EMOTE_ONESHOT_ATTACK_UNARMED);
+                    break;
+                case EVENT_ROCKNOT_SECOND_KEG:
+                    me->SetFacingTo(2.0769417f);
+                    me->HandleEmoteCommand(EMOTE_ONESHOT_ATTACK_UNARMED);
+                    break;
+                case EVENT_ROCKNOT_FINAL_KEG:
+                    me->SetFacingTo(2.443461f);
+                    me->HandleEmoteCommand(EMOTE_ONESHOT_ATTACK_UNARMED);
+                    break;
+                case EVENT_ROCKNOT_ALE:
+                    Talk(SAY_ALE);
+                    break;
+                case EVENT_ROCKNOT_BREAK_KEG:
+                    me->HandleEmoteCommand(EMOTE_ONESHOT_ATTACK_UNARMED);
+                    me->SetEmoteState(EMOTE_STATE_WORK_SHEATHED);
+                    if (GameObject* keg = GetBarObject(DATA_GO_BAR_KEG))
+                        keg->SetGoState(GO_STATE_ACTIVE);
+                    _events.ScheduleEvent(EVENT_ROCKNOT_BREAK_DOOR, 7s);
+                    break;
+                case EVENT_ROCKNOT_BREAK_DOOR:
+                    if (GameObject* door = GetBarObject(DATA_GO_BAR_DOOR))
+                        door->SetGoState(GO_STATE_ACTIVE_ALTERNATIVE);
+                    if (GameObject* trap = GetBarObject(DATA_GO_BAR_KEG_TRAP))
+                        trap->Use(me);
+                    me->SetEmoteState(EMOTE_STATE_STUN);
+                    me->SetHomePosition(me->GetPosition());
+                    _aleComplete = true;
+                    if (_instance)
+                    {
+                        if (Creature* phalanx = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_PHALANX)))
+                            phalanx->AI()->DoAction(ACTION_PHALANX_START_ACTIVATION);
+                        _instance->SetData(TYPE_BAR, DONE);
+                    }
+                    break;
             }
-            else _breakKegTimer -= diff;
         }
-
-        if (_breakDoorTimer)
-        {
-            if (_breakDoorTimer <= diff)
-            {
-                DoGo(DATA_GO_BAR_DOOR, 2);
-                DoGo(DATA_GO_BAR_KEG_TRAP, 0);               //doesn't work very well, leaving code here for future
-                //spell by trap has effect61, this indicate the bar go hostile
-
-                if (Creature* phalanx = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_PHALANX)))
-                    phalanx->AI()->DoAction(ACTION_PHALANX_START_ACTIVATION);
-
-                //for later, this event(s) has alot more to it.
-                //optionally, DONE can trigger bar to go hostile.
-                instance->SetData(TYPE_BAR, DONE);
-
-                _breakDoorTimer = 0;
-            }
-            else _breakDoorTimer -= diff;
-        }
-
-        npc_escortAI::UpdateAI(diff);
     }
 
 private:
-    InstanceScript* instance;
-    uint32 _breakKegTimer;
-    uint32 _breakDoorTimer;
+    GameObject* GetBarObject(uint32 data) const
+    {
+        return _instance ? _instance->instance->GetGameObject(_instance->GetGuidData(data)) : nullptr;
+    }
+
+    InstanceScript* _instance;
+    EventMap _events;
+    bool _aleComplete;
 };
 
 void AddSC_blackrock_depths()
