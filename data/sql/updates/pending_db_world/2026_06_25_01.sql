@@ -1,12 +1,9 @@
 -- Dark Portal battle demon wave and defender behavior fixes.
 -- Consolidates final creature tuning, formation, waypoint, SmartAI, and condition updates.
 
-UPDATE `creature_template` SET `DamageModifier` = CASE `entry`
-    WHEN 18944 THEN 2.4 -- Fel Soldier
-    WHEN 18946 THEN 6.7 -- Infernal Siegebreaker
-    WHEN 19005 THEN 11  -- Wrath Master
-END
-WHERE `entry` IN (18944, 18946, 19005);
+UPDATE `creature_template` SET `DamageModifier` = 2.4 WHERE `entry` = 18944; -- Fel Soldier
+UPDATE `creature_template` SET `DamageModifier` = 6.7 WHERE `entry` = 18946; -- Infernal Siegebreaker
+UPDATE `creature_template` SET `DamageModifier` = 11 WHERE `entry` = 19005; -- Wrath Master
 
 -- The two mage entries carried UNIT_FLAG_DISABLE_MOVE (0x4) in their template
 -- unit_flags, which rooted them in place: they teleported to the path start but
@@ -452,82 +449,89 @@ INSERT INTO `waypoints` (`entry`,`pointid`,`position_x`,`position_y`,`position_z
 -- 920015  Melgromm (spawns at top already)  -> marker 68616
 (920015,1,-230.394,1072.02,54.391,'Melgromm - top plateau marker');
 
--- Rebuild formations by ROLE/ROW: each unit type occupies the marker row matching
--- its terrain tier (plateau mages/commanders, ramp archers, mid casters, front melee),
--- pairing 1 unit -> 1 distinct marker so no two units stack on the same marker.
-SET @FORMATION_FLAGS := 515; -- FOLLOW_LEADER + mutual assist
-
-DROP TEMPORARY TABLE IF EXISTS `tmp_dp_assign`;
-DROP TEMPORARY TABLE IF EXISTS `tmp_dp_used`;
-
-CREATE TEMPORARY TABLE `tmp_dp_assign` AS
-WITH `mk` AS (
-    SELECT `guid`, `position_x` AS `x`, `position_y` AS `y`, `position_z` AS `z`,
-           CASE WHEN `position_x` <= -250 THEN 'A' ELSE 'H' END AS `side`,
-           CASE WHEN `position_z` >= 52 THEN 'plat'
-                WHEN `position_z` >= 44 THEN 'ramp'
-                WHEN `position_y` >= 1096 THEN 'front'
-                ELSE 'mid' END AS `band`
-    FROM `creature`
-    WHERE `map` = 530 AND `id` = 19179
-      AND `position_x` BETWEEN -280 AND -220 AND `position_y` BETWEEN 1065 AND 1100
-), `platrk` AS (
-    SELECT
-        `guid`, `x`, `side`,
-        ROW_NUMBER() OVER (PARTITION BY `side` ORDER BY `y`) AS `prn`
-    FROM `mk` WHERE `band` = 'plat'
-), `mkrole` AS (
-    SELECT `guid`, `x`, `side`, CASE WHEN `prn` = 1 THEN 'cmd' ELSE 'mage' END AS `role` FROM `platrk`
-    UNION ALL
-    SELECT `guid`, `x`, `side`, `band` FROM `mk` WHERE `band` IN ('ramp','front','mid')
-), `mkn` AS (
-    SELECT
-        `guid`, `side`, `role`, ROW_NUMBER() OVER (PARTITION BY `side`, `role` ORDER BY `x`) AS `rn`
-    FROM `mkrole`
-), `un` AS (
-    SELECT `guid`, `id`, `position_x` AS `x`,
-           CASE WHEN `position_x` <= -250 THEN 'A' ELSE 'H' END AS `side`,
-           CASE `id`
-                WHEN 18948 THEN 'front' WHEN 18986 THEN 'mid' WHEN 18965 THEN 'ramp'
-                WHEN 18949 THEN 'mage'  WHEN 18966 THEN 'cmd'
-                WHEN 18950 THEN 'front' WHEN 18972 THEN 'mid' WHEN 18970 THEN 'ramp'
-                WHEN 18971 THEN 'mage'  WHEN 18969 THEN 'cmd' END AS `role`
-    FROM `creature`
-    WHERE `map` = 530
-      AND `id` IN (18948,18986,18965,18949,18966,18950,18972,18970,18971,18969)
-      AND `position_x` BETWEEN -290 AND -210 AND `position_y` BETWEEN 1065 AND 1105
-), `unflt` AS (
-    -- drop the lone boundary grunt on the Alliance side (no Horde-melee marker there)
-    SELECT * FROM `un` WHERE NOT (`id` = 18950 AND `side` = 'A')
-), `unn` AS (
-    SELECT
-        `guid`, `side`, `role`, ROW_NUMBER() OVER (PARTITION BY `side`, `role` ORDER BY `x`) AS `rn`
-    FROM `unflt`
-)
-SELECT
-    `u`.`guid` AS `member_guid`, `m`.`guid` AS `marker_guid`
-FROM `unn` AS `u`
-JOIN `mkn` AS `m` ON `u`.`side` = `m`.`side` AND `u`.`role` = `m`.`role` AND `u`.`rn` = `m`.`rn`;
-
--- Markers that actually receive a unit (used as formation leaders).
-CREATE TEMPORARY TABLE `tmp_dp_used` AS
-SELECT DISTINCT `marker_guid` FROM `tmp_dp_assign`;
-
--- Clear any existing formation rows for these army units and markers.
-DELETE FROM `creature_formations` WHERE `leaderGUID` IN ( SELECT `guid` FROM `creature` WHERE `map` = 530 AND `id` = 19179 AND `position_x` BETWEEN -280 AND -220 AND `position_y` BETWEEN 1065 AND 1100 );
--- Leader self-rows (a formation only activates when its leader is present as a member).
+-- Each defender follows its own role-matched formation marker.
+-- groupAI 515: FOLLOW_LEADER, MEMBER_ASSIST_LEADER and LEADER_ASSIST_MEMBER.
+-- Clear the boundary grunt's old formation too; it has no matching Alliance-side marker.
+DELETE FROM `creature_formations` WHERE `leaderGUID` IN ( 68587, 68588, 68589, 68590, 68591, 68592, 68593, 68594, 68595, 68596, 68597, 68598, 68599, 68600, 68601, 68602, 68603, 68604, 68605, 68606, 68607, 68608, 68609, 68610, 68611, 68612, 68613, 68614, 68615, 68616, 68617, 68618, 68619, 68620, 68621, 68622, 68623, 68624);
+DELETE FROM `creature_formations` WHERE `memberGUID` IN (68010, 68011, 68012, 68013, 68015, 68016, 68017, 68018, 68020, 68021, 68022, 68023, 68024, 68025, 68111, 68112, 68113, 68114, 68115, 68116, 68118, 68121, 68122, 68123, 68124, 68125, 68126, 68127, 68128, 68262, 68263, 68264, 68265, 68266, 86066, 86068, 86069, 86070, 86071);
 INSERT INTO `creature_formations`
-(`leaderGUID`, `memberGUID`, `dist`, `angle`, `groupAI`, `point_1`, `point_2`)
-SELECT `marker_guid`, `marker_guid`, 0, 0, @FORMATION_FLAGS, 0, 0 FROM `tmp_dp_used`;
-
--- Member rows: each unit pinned (dist 0) onto its own role-matched marker.
-DELETE FROM `creature_formations` WHERE `memberGUID` IN ( SELECT `guid` FROM `creature` WHERE `map` = 530 AND `id` IN (18948,18949,18950,18965,18966,18969,18970,18971,18972,18986) AND `position_x` BETWEEN -290 AND -210 AND `position_y` BETWEEN 1065 AND 1105 );
-INSERT INTO `creature_formations`
-(`leaderGUID`, `memberGUID`, `dist`, `angle`, `groupAI`, `point_1`, `point_2`)
-SELECT `marker_guid`, `member_guid`, 0, 0, @FORMATION_FLAGS, 0, 0 FROM `tmp_dp_assign`;
-
-DROP TEMPORARY TABLE IF EXISTS `tmp_dp_assign`;
-DROP TEMPORARY TABLE IF EXISTS `tmp_dp_used`;
+(`leaderGUID`, `memberGUID`, `dist`, `angle`, `groupAI`, `point_1`, `point_2`) VALUES
+(68587, 68587, 0, 0, 515, 0, 0), -- Formation marker
+(68587, 68010, 0, 0, 515, 0, 0), -- Stormwind Soldier
+(68588, 68588, 0, 0, 515, 0, 0), -- Formation marker
+(68588, 68016, 0, 0, 515, 0, 0), -- Stormwind Mage
+(68589, 68589, 0, 0, 515, 0, 0), -- Formation marker
+(68589, 68112, 0, 0, 515, 0, 0), -- Darnassian Archer
+(68590, 68590, 0, 0, 515, 0, 0), -- Formation marker
+(68590, 68111, 0, 0, 515, 0, 0), -- Darnassian Archer
+(68591, 68591, 0, 0, 515, 0, 0), -- Formation marker
+(68591, 68266, 0, 0, 515, 0, 0), -- Ironforge Paladin
+(68592, 68592, 0, 0, 515, 0, 0), -- Formation marker
+(68592, 68011, 0, 0, 515, 0, 0), -- Stormwind Soldier
+(68593, 68593, 0, 0, 515, 0, 0), -- Formation marker
+(68593, 68015, 0, 0, 515, 0, 0), -- Stormwind Mage
+(68594, 68594, 0, 0, 515, 0, 0), -- Formation marker
+(68594, 68262, 0, 0, 515, 0, 0), -- Ironforge Paladin
+(68595, 68595, 0, 0, 515, 0, 0), -- Formation marker
+(68595, 68020, 0, 0, 515, 0, 0), -- Orgrimmar Grunt
+(68596, 68596, 0, 0, 515, 0, 0), -- Formation marker
+(68596, 68114, 0, 0, 515, 0, 0), -- Darnassian Archer
+(68597, 68597, 0, 0, 515, 0, 0), -- Formation marker
+(68597, 68263, 0, 0, 515, 0, 0), -- Ironforge Paladin
+(68598, 68598, 0, 0, 515, 0, 0), -- Formation marker
+(68598, 68265, 0, 0, 515, 0, 0), -- Ironforge Paladin
+(68599, 68599, 0, 0, 515, 0, 0), -- Formation marker
+(68599, 68264, 0, 0, 515, 0, 0), -- Ironforge Paladin
+(68600, 68600, 0, 0, 515, 0, 0), -- Formation marker
+(68600, 68115, 0, 0, 515, 0, 0), -- Darnassian Archer
+(68601, 68601, 0, 0, 515, 0, 0), -- Formation marker
+(68601, 68116, 0, 0, 515, 0, 0), -- Darnassian Archer
+(68602, 68602, 0, 0, 515, 0, 0), -- Formation marker
+(68602, 68021, 0, 0, 515, 0, 0), -- Stormwind Soldier
+(68603, 68603, 0, 0, 515, 0, 0), -- Formation marker
+(68603, 68113, 0, 0, 515, 0, 0), -- Darnassian Archer
+(68604, 68604, 0, 0, 515, 0, 0), -- Formation marker
+(68604, 68025, 0, 0, 515, 0, 0), -- Orgrimmar Grunt
+(68605, 68605, 0, 0, 515, 0, 0), -- Formation marker
+(68605, 68013, 0, 0, 515, 0, 0), -- Stormwind Soldier
+(68606, 68606, 0, 0, 515, 0, 0), -- Formation marker
+(68606, 86066, 0, 0, 515, 0, 0), -- Orgrimmar Shaman
+(68607, 68607, 0, 0, 515, 0, 0), -- Formation marker
+(68607, 86069, 0, 0, 515, 0, 0), -- Orgrimmar Shaman
+(68608, 68608, 0, 0, 515, 0, 0), -- Formation marker
+(68608, 68012, 0, 0, 515, 0, 0), -- Stormwind Soldier
+(68609, 68609, 0, 0, 515, 0, 0), -- Formation marker
+(68609, 68118, 0, 0, 515, 0, 0), -- Justinius
+(68610, 68610, 0, 0, 515, 0, 0), -- Formation marker
+(68610, 68122, 0, 0, 515, 0, 0), -- Darkspear Axe Thrower
+(68611, 68611, 0, 0, 515, 0, 0), -- Formation marker
+(68611, 68124, 0, 0, 515, 0, 0), -- Darkspear Axe Thrower
+(68612, 68612, 0, 0, 515, 0, 0), -- Formation marker
+(68612, 68018, 0, 0, 515, 0, 0), -- Orgrimmar Grunt
+(68613, 68613, 0, 0, 515, 0, 0), -- Formation marker
+(68613, 68023, 0, 0, 515, 0, 0), -- Darkspear Axe Thrower
+(68614, 68614, 0, 0, 515, 0, 0), -- Formation marker
+(68614, 86068, 0, 0, 515, 0, 0), -- Orgrimmar Shaman
+(68615, 68615, 0, 0, 515, 0, 0), -- Formation marker
+(68615, 68024, 0, 0, 515, 0, 0), -- Orgrimmar Grunt
+(68616, 68616, 0, 0, 515, 0, 0), -- Formation marker
+(68616, 68121, 0, 0, 515, 0, 0), -- Melgromm
+(68617, 68617, 0, 0, 515, 0, 0), -- Formation marker
+(68617, 68126, 0, 0, 515, 0, 0), -- Darkspear Axe Thrower
+(68618, 68618, 0, 0, 515, 0, 0), -- Formation marker
+(68618, 68128, 0, 0, 515, 0, 0), -- Undercity Mage
+(68619, 68619, 0, 0, 515, 0, 0), -- Formation marker
+(68619, 86071, 0, 0, 515, 0, 0), -- Orgrimmar Shaman
+(68620, 68620, 0, 0, 515, 0, 0), -- Formation marker
+(68620, 86070, 0, 0, 515, 0, 0), -- Orgrimmar Shaman
+(68621, 68621, 0, 0, 515, 0, 0), -- Formation marker
+(68621, 68017, 0, 0, 515, 0, 0), -- Orgrimmar Grunt
+(68622, 68622, 0, 0, 515, 0, 0), -- Formation marker
+(68622, 68123, 0, 0, 515, 0, 0), -- Darkspear Axe Thrower
+(68623, 68623, 0, 0, 515, 0, 0), -- Formation marker
+(68623, 68125, 0, 0, 515, 0, 0), -- Darkspear Axe Thrower
+(68624, 68624, 0, 0, 515, 0, 0), -- Formation marker
+(68624, 68127, 0, 0, 515, 0, 0); -- Undercity Mage
 
 -- Totem passive spells. The summon spells (33560/33570) only create the totem
 -- creature; the buff/effect comes from the totem auto-casting its own passive on
