@@ -253,6 +253,11 @@ struct npc_deathstalker_fearleia : public ScriptedAI
         if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
             if (player->GetQuestStatus(QUEST_PYREWOOD_AMBUSH) == QUEST_STATUS_INCOMPLETE)
                 player->FailQuest(QUEST_PYREWOOD_AMBUSH);
+
+        scheduler.CancelAll();
+        _questInProgress = false;
+        _playerGUID.Clear();
+        _summons.DespawnAll();
     }
 
     void UpdateAI(uint32 diff) override
