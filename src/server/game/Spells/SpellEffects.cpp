@@ -2082,7 +2082,12 @@ void Spell::SendLoot(ObjectGuid guid, LootType loottype)
                     gameObjTarget->TriggeringLinkedGameObject(trapEntry, m_caster);
 
                     if (!gameObjTarget->GetGOInfo()->chest.lootId)
+                    {
+                        if (gameObjTarget->GetGOInfo()->chest.consumable)
+                            gameObjTarget->SetLootState(GO_JUST_DEACTIVATED);
+
                         return;
+                    }
                 }
 
             // Don't return, let loots been taken
