@@ -18,6 +18,7 @@
 #include "IntegrationTestFixture.h"
 #include "MovementGenerator.h"
 #include "MotionMaster.h"
+#include "MoveSpline.h"
 #include "TestCreature.h"
 #include "WaypointMovementGenerator.h"
 #include "WaypointMgr.h"
@@ -56,6 +57,10 @@ protected:
 
         if (!sMovementGeneratorRegistry->GetRegistryItem(IDLE_MOTION_TYPE))
             (new IdleMovementFactory())->RegisterSelf();
+
+        if (!sMovementGeneratorRegistry->GetRegistryItem(WAYPOINT_MOTION_TYPE))
+            (new MovementGeneratorFactory<WaypointMovementGenerator<Creature>>(
+                WAYPOINT_MOTION_TYPE))->RegisterSelf();
 
         _leader = CreateFormationCreature(1, 10001, LeaderSpawnId);
         _firstFollower = CreateFormationCreature(2, 10002, FirstFollowerSpawnId);
@@ -125,6 +130,8 @@ protected:
     TestCreature* _firstFollower = nullptr;
     TestCreature* _secondFollower = nullptr;
 };
+
+} // namespace
 
 TEST_F(PatrolLeaderPromotionTest, OptInPromotionKeepsOriginalLeaderIdentity)
 {
@@ -249,7 +256,15 @@ TEST_F(PatrolLeaderPromotionTest, ReturningOriginalLeaderWaitsForCombatToEnd)
 
     TestCreature* target = CreateTestCreature(4, 10004, TEST_FACTION_HOSTILE_TO_MONSTERS);
     ASSERT_TRUE(_firstFollower->TestGetCombatMgr().SetInCombatWith(target));
-    _firstFollower->GetMotionMaster()->MovePoint(1, 10.0f, 0.0f, 0.0f);
+
+    // Exercise the active-spline branch without requiring terrain or model DBC data.
+    Movement::MoveSplineInitArgs splineArgs;
+    splineArgs.path.emplace_back(0.0f, 0.0f, 0.0f);
+    splineArgs.path.emplace_back(10.0f, 0.0f, 0.0f);
+    splineArgs.velocity = 1.0f;
+    splineArgs.facing.angle = 0.0f;
+    splineArgs.walk = false;
+    _firstFollower->movespline->Initialize(splineArgs);
     ASSERT_FALSE(_firstFollower->movespline->Finalized());
 
     _group->RemoveMember(_leader);
@@ -264,5 +279,3 @@ TEST_F(PatrolLeaderPromotionTest, ReturningOriginalLeaderWaitsForCombatToEnd)
     EXPECT_EQ(_leader->GetMotionMaster()->GetMotionSlotType(MOTION_SLOT_IDLE), IDLE_MOTION_TYPE);
     EXPECT_EQ(_group->GetMovementLeader(), _firstFollower);
 }
-
-} // namespace
