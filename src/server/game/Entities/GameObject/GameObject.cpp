@@ -1384,7 +1384,7 @@ void GameObject::TriggeringLinkedGameObject(uint32 trapEntry, Unit* target)
     // found correct GO
     // xinef: we should use the trap (checks for despawn type)
     if (GameObject* trapGO = GetLinkedTrap())
-        if (trapGO->getLootState() == GO_READY)
+        if (trapGO->isSpawned() && trapGO->getLootState() == GO_READY)
             trapGO->Use(target); // trapGO->CastSpell(target, trapInfo->trap.spellId);
 }
 
