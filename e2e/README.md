@@ -156,6 +156,7 @@ If the scenario should stay as a regression, **move** it into `suites/` next to 
 | guild/charter_bank | charter buy+turn-in | P2 | covered | — |
 | instances/bind_reset | party tele; ritual summon | P2 | covered; post-reset summon `blocked-harness` (AcceptSummon after reset) | #10708 |
 | instances/classic/stratholme | Timmy remains hidden while a relevant Square Scarlet lives, then emerges after the area is clear | P2 | covered (`TestAC_26363_TimmyEmergesAfterSquareCleared`) | #26363 |
+| instances/northrend/trial_of_the_crusader | Pursuing Spikes retain their living marked player after reaching them, without Permafrost | P2 | covered (`TestAC_23540_PursuingSpikeKeepsLivingTargetOnArrival`); live validation pending | #23540 |
 | instances/ulduar | named tele; Freya wave interval | P2 | covered (`TestAC_27095_*`); Kologarn Charge `blocked-harness` (bridge Z after Charge) | #26266 #27095 |
 
 ---
