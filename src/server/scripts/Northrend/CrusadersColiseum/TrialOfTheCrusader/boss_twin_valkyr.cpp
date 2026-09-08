@@ -833,19 +833,18 @@ class spell_valkyr_touch_aura : public AuraScript
                 if (Player* plr = itr->GetSource())
                     if (plr->IsAlive() && !plr->HasAura(excludedID) && !plr->HasSpiritOfRedemptionAura())
                     {
-                        uint32 absorb = 0;
-                        uint32 resist = 0;
-                        CleanDamage(0, 0, BASE_ATTACK, MELEE_HIT_NORMAL);
                         int32 dmg = urand(2925, 3075) * (caster->GetMap()->GetDifficulty() - 1);
                         uint32 damage = dmg;
-                        int32 resilienceReduction = damage;
                         if (caster->CanApplyResilience())
                             Unit::ApplyResilience(plr, nullptr, &dmg, false, CR_CRIT_TAKEN_SPELL);
-                        resilienceReduction = damage - resilienceReduction;
-                        damage -= resilienceReduction;
-                        uint32 mitigated_damage = resilienceReduction;
-                        DamageInfo dmgInfo(caster, plr, damage, GetSpellInfo(), GetSpellInfo()->GetSchoolMask(), DOT, mitigated_damage);
+                        uint32 mitigatedDamage = damage - dmg;
+                        damage = dmg;
+                        DamageInfo dmgInfo(caster, plr, damage, GetSpellInfo(), GetSpellInfo()->GetSchoolMask(), DOT, mitigatedDamage);
                         Unit::CalcAbsorbResist(dmgInfo);
+                        // CalcAbsorbResist updates DamageInfo, not the original damage variable.
+                        damage = dmgInfo.GetDamage();
+                        uint32 absorb = dmgInfo.GetAbsorb();
+                        uint32 resist = dmgInfo.GetResist();
                         Unit::DealDamageMods(plr, damage, &absorb);
                         int32 overkill = damage - plr->GetHealth();
                         if (overkill < 0)
