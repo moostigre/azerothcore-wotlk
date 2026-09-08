@@ -143,6 +143,7 @@ If the scenario should stay as a regression, **move** it into `suites/` next to 
 | combat/threat | engage / taunt switch / kill clears combat | P1 | covered | — |
 | combat/vehicles | spellclick steed enter/exit | P2 | covered | — |
 | spells/aura | apply/query; CC broken by damage; mount persist | P1 | covered (`TestAC_26130_*`) | #26130 |
+| spells/aura | Permafrost slow returns after Freedom expires; another player stays slowed | P1 | covered (`TestAC_16496_*`); [scope and results](suites/spells/aura/permafrost.md) | #16496 |
 | spells/cast | Charge on dummy; fail path; stance; Raise Dead + ghoul | P1 | covered (`TestAC_27061_*`) | #27061 |
 | spells/effects | Charge / grounding totem / Sweeping Strikes Execute | P1 | covered (`TestAC_26997_*`); dummy-summon `blocked-harness` (engineering dummy lifetime) | #26774 #26997 |
 | social/group | form / leave / leader / loot method / disband | P2 | covered | — |
