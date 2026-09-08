@@ -1383,14 +1383,6 @@ void SpellMgr::LoadSpellInfoCorrections()
         spellInfo->Effects[EFFECT_0].RadiusEntry = sSpellRadiusStore.LookupEntry(EFFECT_RADIUS_10_YARDS); // SPELL_EFFECT_SCHOOL_DAMAGE
     });
 
-    // WintergraspDemolisher - Spell Ram -  EffectRadiusIndex
-    ApplySpellFix({ 54107 }, [](SpellInfo* spellInfo)
-    {
-        spellInfo->Effects[EFFECT_0].RadiusEntry = sSpellRadiusStore.LookupEntry(EFFECT_RADIUS_3_YARDS); // SPELL_EFFECT_KNOCK_BACK
-        spellInfo->Effects[EFFECT_1].RadiusEntry = sSpellRadiusStore.LookupEntry(EFFECT_RADIUS_3_YARDS); // SPELL_EFFECT_SCHOOL_DAMAGE
-        spellInfo->Effects[EFFECT_2].RadiusEntry = sSpellRadiusStore.LookupEntry(EFFECT_RADIUS_3_YARDS); // SPELL_EFFECT_WEAPON_DAMAGE
-    });
-
     // WintergraspSiegeEngine - Spell Ram - EffectRadiusIndex
     ApplySpellFix({ 51678 }, [](SpellInfo* spellInfo)
     {
