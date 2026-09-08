@@ -2375,6 +2375,7 @@ void SpellMgr::LoadSpellInfoCorrections()
         65950   // light 0
         }, [](SpellInfo* spellInfo)
     {
+        spellInfo->ExcludeTargetAuraSpell = 65686; // Light Essence
         //spellInfo->EffectApplyAuraName[0] = SPELL_AURA_PERIODIC_DUMMY;
         spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(6);
         spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo();
@@ -2393,6 +2394,7 @@ void SpellMgr::LoadSpellInfoCorrections()
         67296   // light 1
         }, [](SpellInfo* spellInfo)
     {
+        spellInfo->ExcludeTargetAuraSpell = 67222; // Light Essence
         //spellInfo->Effects[EFFECT_0].ApplyAuraNames = SPELL_AURA_PERIODIC_DUMMY;
         spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(6);
         spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo();
@@ -2411,6 +2413,7 @@ void SpellMgr::LoadSpellInfoCorrections()
         67297   // light 2
         }, [](SpellInfo* spellInfo)
     {
+        spellInfo->ExcludeTargetAuraSpell = 67223; // Light Essence
         //spellInfo->Effects[EFFECT_0].ApplyAuraNames = SPELL_AURA_PERIODIC_DUMMY;
         spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(6);
         spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo();
@@ -2429,6 +2432,7 @@ void SpellMgr::LoadSpellInfoCorrections()
         67298   // light 3
         }, [](SpellInfo* spellInfo)
     {
+        spellInfo->ExcludeTargetAuraSpell = 67224; // Light Essence
         //spellInfo->Effects[EFFECT_0].ApplyAuraNames = SPELL_AURA_PERIODIC_DUMMY;
         spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(6);
         spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo();
@@ -2447,6 +2451,7 @@ void SpellMgr::LoadSpellInfoCorrections()
         66001   // dark 0
         }, [](SpellInfo* spellInfo)
     {
+        spellInfo->ExcludeTargetAuraSpell = 65684; // Dark Essence
         //spellInfo->Effects[EFFECT_0].ApplyAuraNames = SPELL_AURA_PERIODIC_DUMMY;
         spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(6);
         spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo();
@@ -2465,6 +2470,7 @@ void SpellMgr::LoadSpellInfoCorrections()
         67281   // dark 1
         }, [](SpellInfo* spellInfo)
     {
+        spellInfo->ExcludeTargetAuraSpell = 67176; // Dark Essence
         //spellInfo->Effects[EFFECT_0].ApplyAuraNames = SPELL_AURA_PERIODIC_DUMMY;
         spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(6);
         spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo();
@@ -2483,6 +2489,7 @@ void SpellMgr::LoadSpellInfoCorrections()
         67282   // dark 2
         }, [](SpellInfo* spellInfo)
     {
+        spellInfo->ExcludeTargetAuraSpell = 67177; // Dark Essence
         //spellInfo->Effects[EFFECT_0].ApplyAuraNames = SPELL_AURA_PERIODIC_DUMMY;
         spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(6);
         spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo();
@@ -2501,6 +2508,7 @@ void SpellMgr::LoadSpellInfoCorrections()
         67283   // dark 3
         }, [](SpellInfo* spellInfo)
     {
+        spellInfo->ExcludeTargetAuraSpell = 67178; // Dark Essence
         //spellInfo->Effects[EFFECT_0].ApplyAuraNames = SPELL_AURA_PERIODIC_DUMMY;
         spellInfo->Effects[EFFECT_0].TargetA = SpellImplicitTargetInfo(6);
         spellInfo->Effects[EFFECT_0].TargetB = SpellImplicitTargetInfo();
