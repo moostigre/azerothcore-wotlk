@@ -843,6 +843,13 @@ void BattlegroundSA::SendTime()
 
 bool BattlegroundSA::CanInteractWithObject(uint32 objectId)
 {
+    // Captures are permanent for this round. Check ownership before the gate fallthrough,
+    // so the Titan Relic does not inherit the central graveyard's ownership requirement.
+    if ((objectId == BG_SA_LEFT_FLAG && GraveyardStatus[BG_SA_LEFT_CAPTURABLE_GY] == Attackers) ||
+        (objectId == BG_SA_RIGHT_FLAG && GraveyardStatus[BG_SA_RIGHT_CAPTURABLE_GY] == Attackers) ||
+        (objectId == BG_SA_CENTRAL_FLAG && GraveyardStatus[BG_SA_CENTRAL_CAPTURABLE_GY] == Attackers))
+        return false;
+
     switch (objectId)
     {
         case BG_SA_TITAN_RELIC:
@@ -1047,6 +1054,9 @@ void BattlegroundSA::CaptureGraveyard(BG_SA_Graveyards i, Player* Source)
             ABORT();
             break;
     }
+
+    // AddObject creates a new banner using template flags; apply the captured state now.
+    UpdateObjectInteractionFlags(flag);
 }
 
 void BattlegroundSA::EventPlayerUsedGO(Player* Source, GameObject* object)
