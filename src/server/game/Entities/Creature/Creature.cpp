@@ -3942,6 +3942,10 @@ bool Creature::IsUpdateNeeded()
     if (WorldObject::IsUpdateNeeded())
         return true;
 
+    // Dynamic respawns create a new creature; keep the old corpse ticking until it is removed.
+    if (!_respawnCompatibilityMode && getDeathState() == DeathState::Corpse)
+        return true;
+
     if (GetMap()->isCellMarked(GetCurrentCell().GetCellCoord().GetId()))
         return true;
 
