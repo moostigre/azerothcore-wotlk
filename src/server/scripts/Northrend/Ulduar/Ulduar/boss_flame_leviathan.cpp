@@ -1491,6 +1491,16 @@ class spell_pursue : public SpellScript
     }
 };
 
+static bool IsAvailableFlameLeviathanSeat(Unit const* unit)
+{
+    if (!unit || unit->GetEntry() != NPC_SEAT)
+        return false;
+
+    Vehicle* seat = unit->GetVehicleKit();
+    Unit* device = seat ? seat->GetPassenger(SEAT_DEVICE) : nullptr;
+    return seat && !seat->GetPassenger(SEAT_PLAYER) && device && !device->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+}
+
 class spell_vehicle_throw_passenger : public SpellScript
 {
     PrepareSpellScript(spell_vehicle_throw_passenger);
@@ -1525,11 +1535,8 @@ class spell_vehicle_throw_passenger : public SpellScript
         for (WorldObject* obj : targetList)
         {
             Unit* unit = obj->ToUnit();
-            if (!unit || unit->GetEntry() != NPC_SEAT) continue;
-
-            Vehicle* seat = unit->GetVehicleKit();
-            Unit* device = seat ? seat->GetPassenger(SEAT_DEVICE) : nullptr;
-            if (!seat || seat->GetPassenger(0) || !device || device->GetCurrentSpell(CURRENT_CHANNELED_SPELL)) continue;
+            if (!IsAvailableFlameLeviathanSeat(unit))
+                continue;
 
             float dist = unit->GetExactDistSq(dst);
             if (dist < minDist)
@@ -1552,6 +1559,41 @@ class spell_vehicle_throw_passenger : public SpellScript
     void Register() override
     {
         AfterCast += SpellCastFn(spell_vehicle_throw_passenger::HandleScript);
+    }
+};
+
+// 62323 Hookshot
+class spell_hookshot : public SpellScript
+{
+    PrepareSpellScript(spell_hookshot);
+
+    void SelectSeat(WorldObject*& target)
+    {
+        Unit* nearestSeat = target ? target->ToUnit() : nullptr;
+        Vehicle* leviathan = nearestSeat ? nearestSeat->GetVehicle() : nullptr;
+        if (!leviathan)
+        {
+            target = nullptr;
+            return;
+        }
+
+        Unit* selectedSeat = nullptr;
+        for (auto const& seat : leviathan->Seats)
+        {
+            Unit* candidate = leviathan->GetPassenger(seat.first);
+            if (!IsAvailableFlameLeviathanSeat(candidate))
+                continue;
+
+            if (!selectedSeat || GetCaster()->GetExactDistSq(candidate) < GetCaster()->GetExactDistSq(selectedSeat))
+                selectedSeat = candidate;
+        }
+
+        target = selectedSeat;
+    }
+
+    void Register() override
+    {
+        OnObjectTargetSelect += SpellObjectTargetSelectFn(spell_hookshot::SelectSeat, EFFECT_0, TARGET_UNIT_NEARBY_ENTRY);
     }
 };
 
@@ -1918,6 +1960,7 @@ void AddSC_boss_flame_leviathan()
     RegisterSpellScript(spell_systems_shutdown_aura);
     RegisterSpellScript(spell_pursue);
     RegisterSpellScript(spell_vehicle_throw_passenger);
+    RegisterSpellScript(spell_hookshot);
     RegisterSpellScript(spell_hookshot_aura);
     RegisterSpellScript(spell_tar_blaze_aura);
     RegisterSpellScript(spell_vehicle_grab_pyrite);
