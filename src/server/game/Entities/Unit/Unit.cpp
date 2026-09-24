@@ -7213,8 +7213,8 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
         }
     }
 
-    // delay offhand weapon attack by 50% of the base attack time
-    if (HasOffhandWeaponForAttack() && isAttackReady(OFF_ATTACK))
+    // delay creature offhand attacks by 50% of the base attack time
+    if (!IsPlayer() && HasOffhandWeaponForAttack() && isAttackReady(OFF_ATTACK))
         setAttackTimer(OFF_ATTACK, std::max(getAttackTimer(OFF_ATTACK), getAttackTimer(BASE_ATTACK) + int32(CalculatePct(GetFloatValue(UNIT_FIELD_BASEATTACKTIME), 50))));
 
     if (meleeAttack)
