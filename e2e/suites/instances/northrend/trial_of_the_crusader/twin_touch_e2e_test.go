@@ -46,14 +46,7 @@ func TestAC_19834_TwinTouchRespectsEssenceAndAbsorbs(t *testing.T) {
 		t.Run(difficulty.name, func(t *testing.T) {
 			// Separate parties isolate instance difficulty, binds, and difficulty
 			// change cooldowns; reuse these clients for both Touch colors.
-			bots := e2eharness.NewScenario(t, e2eharness.ScenarioOpts{
-				Prefix: "Twt",
-				Bots: []e2eharness.BotSpec{
-					{Role: "holder", Race: e2eharness.RaceHuman, Class: e2eharness.ClassWarrior, Level: 80},
-					{Role: "matching", Race: e2eharness.RaceHuman, Class: e2eharness.ClassWarrior, Level: 80},
-					{Role: "shielded", Race: e2eharness.RaceHuman, Class: e2eharness.ClassPriest, Level: 80},
-				},
-			})
+			bots := newTouchBots(t)
 			holder := e2eharness.ByRole(t, bots, "holder")
 			matching := e2eharness.ByRole(t, bots, "matching")
 			shielded := e2eharness.ByRole(t, bots, "shielded")
