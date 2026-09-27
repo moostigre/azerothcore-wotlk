@@ -167,6 +167,26 @@ void LoginDatabaseConnection::DoPrepareStatements()
     PrepareStatement(LOGIN_INS_RBAC_ACCOUNT_PERMISSION, "INSERT INTO rbac_account_permissions (accountId, permissionId, granted, realmId) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE granted = VALUES(granted)", CONNECTION_ASYNC);
     PrepareStatement(LOGIN_DEL_RBAC_ACCOUNT_PERMISSION, "DELETE FROM rbac_account_permissions WHERE accountId = ? AND permissionId = ? AND (realmId = ? OR realmId = -1)", CONNECTION_ASYNC);
     PrepareStatement(LOGIN_SEL_RBAC_DEFAULT_PERMISSIONS, "SELECT secId, permissionId FROM rbac_default_permissions WHERE (realmId = ? OR realmId = -1) ORDER BY secId ASC", CONNECTION_SYNCH);
+
+    PrepareStatement(LOGIN_SEL_ACCOUNT_HISTORY_TARGET,
+        "SELECT a.username, CAST(COALESCE(MAX(aa.gmlevel), 0) AS UNSIGNED) FROM account a "
+        "LEFT JOIN account_access aa ON aa.id = a.id WHERE a.id = ? GROUP BY a.id, a.username", CONNECTION_SYNCH);
+    PrepareStatement(LOGIN_SEL_ACCOUNT_HISTORY,
+        "SELECT id, realm_id, character_guid, character_name, author_account, author_guid, author_name, "
+        "created_at, note, removed_at, remover_account, remover_realm, remover_guid, remover_name, removal_reason "
+        "FROM account_history WHERE account_id = ? AND id < ? ORDER BY id DESC LIMIT 11", CONNECTION_SYNCH);
+    PrepareStatement(LOGIN_INS_ACCOUNT_HISTORY,
+        "INSERT INTO account_history (account_id, realm_id, character_guid, character_name, "
+        "author_account, author_guid, author_name, created_at, note) VALUES (?, ?, ?, ?, ?, ?, ?, UNIX_TIMESTAMP(), ?)",
+        CONNECTION_SYNCH);
+    PrepareStatement(LOGIN_SEL_ACCOUNT_HISTORY_NOTE,
+        "SELECT character_guid, realm_id, removed_at FROM account_history WHERE account_id = ? AND id = ?",
+        CONNECTION_SYNCH);
+    PrepareStatement(LOGIN_UPD_ACCOUNT_HISTORY_REMOVE,
+        "UPDATE account_history SET removed_at = UNIX_TIMESTAMP(), remover_account = ?, remover_realm = ?, "
+        "remover_guid = ?, remover_name = ?, removal_reason = ? "
+        "WHERE account_id = ? AND id = ? AND character_guid = ? AND realm_id = ? AND removed_at IS NULL",
+        CONNECTION_SYNCH);
 }
 
 LoginDatabaseConnection::LoginDatabaseConnection(MySQLConnectionInfo& connInfo) : MySQLConnection(connInfo)

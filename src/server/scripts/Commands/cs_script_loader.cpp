@@ -38,6 +38,7 @@ void AddSC_gobject_commandscript();
 void AddSC_group_commandscript();
 void AddSC_guild_commandscript();
 void AddSC_honor_commandscript();
+void AddSC_history_commandscript();
 void AddSC_instance_commandscript();
 void AddSC_inventory_commandscript();
 void AddSC_learn_commandscript();
@@ -97,6 +98,7 @@ void AddCommandsScripts()
     AddSC_group_commandscript();
     AddSC_guild_commandscript();
     AddSC_honor_commandscript();
+    AddSC_history_commandscript();
     AddSC_instance_commandscript();
     AddSC_inventory_commandscript();
     AddSC_learn_commandscript();
