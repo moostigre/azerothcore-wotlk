@@ -117,7 +117,8 @@ public:
 
     //! Directly executes a one-way SQL operation in prepared statement format, that will block the calling thread until finished.
     //! Statement must be prepared with the CONNECTION_SYNCH flag.
-    void DirectExecute(PreparedStatement<T>* stmt);
+    //! Returns SQL execution success, not whether any rows were affected.
+    bool DirectExecute(PreparedStatement<T>* stmt);
 
     /**
         Synchronous query (with resultset) methods.

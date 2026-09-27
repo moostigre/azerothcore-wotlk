@@ -1575,6 +1575,21 @@ enum AcoreStrings
 
     LANG_REMOVEITEM_NONE_LEFT           = 35480,
     LANG_CHARACTER_ONLINE               = 35481,
-    LANG_CHARACTER_OFFLINE              = 35482
+    LANG_CHARACTER_OFFLINE              = 35482,
+
+    LANG_HISTORY_HEADER                 = 35483,
+    LANG_HISTORY_EMPTY                  = 35484,
+    LANG_HISTORY_ENTRY                  = 35485,
+    LANG_HISTORY_CHARACTER              = 35486,
+    LANG_HISTORY_NOTE                   = 35487,
+    LANG_HISTORY_REMOVED                = 35488,
+    LANG_HISTORY_REMOVAL_REASON         = 35489,
+    LANG_HISTORY_NEXT                   = 35490,
+    LANG_HISTORY_ADDED                  = 35491,
+    LANG_HISTORY_REMOVE_SUCCESS         = 35492,
+    LANG_HISTORY_NOT_FOUND              = 35493,
+    LANG_HISTORY_ALREADY_REMOVED        = 35494,
+    LANG_HISTORY_INVALID_TEXT           = 35495,
+    LANG_HISTORY_DATABASE_ERROR         = 35496
 };
 #endif
