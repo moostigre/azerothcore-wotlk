@@ -44,13 +44,15 @@ enum DeathKnightSpells
     SPELL_DK_SANCTUARY              = 54661,
     SPELL_DK_NIGHT_OF_THE_DEAD      = 62137,
     SPELL_DK_PET_SCALING            = 61017,
-    SPELL_DK_ARMY_GHOUL_BIRTH       = 7398,
+    SPELL_DK_GHOUL_BIRTH            = 7398,
     // Risen Ally
     SPELL_DK_RAISE_ALLY             = 46619,
     SPELL_GHOUL_FRENZY              = 62218,
     // Gargoyle
     SPELL_GARGOYLE_STRIKE           = 51963,
 };
+
+static constexpr auto GhoulEmergeTime = 3500ms;
 
 struct npc_pet_dk_ebon_gargoyle : ScriptedAI
 {
@@ -280,15 +282,26 @@ struct npc_pet_dk_ghoul : public CombatAI
         if (!summoner || !summoner->IsPlayer())
             return;
 
-        // Remember the owner's target so we can attack it after the rising stun expires.
+        _emerging = true;
+        me->SetControlled(true, UNIT_STATE_ROOT);
+        DoCastSelf(SPELL_DK_GHOUL_BIRTH);
+
+        scheduler.Schedule(GhoulEmergeTime, [this](TaskContext /*context*/)
+        {
+            me->SetControlled(false, UNIT_STATE_ROOT);
+            _emerging = false;
+        });
+
+        // Remember the owner's target so we can attack it after emerging.
         if (Unit* victim = summoner->ToPlayer()->GetVictim())
             _summonTargetGUID = victim->GetGUID();
     }
 
     void UpdateAI(uint32 diff) override
     {
-        // While stunned (rising animation), don't run CombatAI - just wait.
-        if (me->HasUnitState(UNIT_STATE_STUNNED))
+        scheduler.Update(diff);
+
+        if (_emerging || me->HasUnitState(UNIT_STATE_STUNNED))
             return;
 
         // Once the stun expires, attack the saved target from summon time.
@@ -313,6 +326,7 @@ struct npc_pet_dk_ghoul : public CombatAI
 
 private:
     ObjectGuid _summonTargetGUID;
+    bool _emerging = false;
 };
 
 struct npc_pet_dk_risen_ally : public PossessedAI
@@ -340,10 +354,12 @@ struct npc_pet_dk_army_of_the_dead : public AggressorAI
     {
         _emerging = true;
         me->SetReactState(REACT_PASSIVE);
-        DoCastSelf(SPELL_DK_ARMY_GHOUL_BIRTH);
+        me->SetControlled(true, UNIT_STATE_ROOT);
+        DoCastSelf(SPELL_DK_GHOUL_BIRTH);
 
-        scheduler.Schedule(2500ms, [this](TaskContext /*context*/)
+        scheduler.Schedule(GhoulEmergeTime, [this](TaskContext /*context*/)
         {
+            me->SetControlled(false, UNIT_STATE_ROOT);
             _emerging = false;
             me->SetReactState(REACT_AGGRESSIVE);
 
