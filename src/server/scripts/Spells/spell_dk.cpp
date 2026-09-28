@@ -16,6 +16,7 @@
  */
 
 #include "AreaDefines.h"
+#include "Pet.h"
 #include "PetDefines.h"
 #include "Player.h"
 #include "SpellAuraEffects.h"
@@ -25,6 +26,7 @@
 #include "SpellScriptLoader.h"
 #include "Totem.h"
 #include "UnitAI.h"
+#include "Pet/pet_dk.h"
 /*
  * Scripts for spells with SPELLFAMILY_DEATHKNIGHT and SPELLFAMILY_GENERIC spells used by deathknight players.
  * Ordered alphabetically using scriptname.
@@ -2177,6 +2179,13 @@ class spell_dk_raise_dead : public SpellScript
         targets.SetDst(*GetHitUnit());
 
         GetCaster()->CastSpell(targets, spellInfo, nullptr, TRIGGERED_FULL_MASK, nullptr, nullptr, GetCaster()->GetGUID());
+
+        // Controllable pets bypass TempSummon::InitSummon and its IsSummonedBy callback.
+        if (GetCaster()->HasAura(SPELL_DK_MASTER_OF_GHOULS))
+            if (Pet* ghoul = GetCaster()->ToPlayer()->GetPet())
+                if (ghoul->GetEntry() == NPC_DK_RISEN_GHOUL && ghoul->IsAIEnabled)
+                    ghoul->AI()->DoAction(ACTION_DK_GHOUL_EMERGE);
+
         GetCaster()->ToPlayer()->RemoveSpellCooldown(GetSpellInfo()->Id, true);
     }
 

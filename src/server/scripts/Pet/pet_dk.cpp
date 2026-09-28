@@ -25,6 +25,7 @@
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "pet_dk.h"
 /*
  * Ordered alphabetically using scriptname.
  * Scriptnames of files in this file should be prefixed with "npc_pet_dk_".
@@ -52,7 +53,8 @@ enum DeathKnightSpells
     SPELL_GARGOYLE_STRIKE           = 51963,
 };
 
-static constexpr auto GhoulEmergeTime = 3500ms;
+// Birth has a two-second cast before the client plays its spawn animation.
+static constexpr auto GhoulEmergeTime = 5500ms;
 
 struct npc_pet_dk_ebon_gargoyle : ScriptedAI
 {
@@ -282,6 +284,24 @@ struct npc_pet_dk_ghoul : public CombatAI
         if (!summoner || !summoner->IsPlayer())
             return;
 
+        BeginEmergence(summoner->ToPlayer());
+    }
+
+    void DoAction(int32 action) override
+    {
+        if (action != ACTION_DK_GHOUL_EMERGE)
+            return;
+
+        if (Unit* owner = me->GetOwner())
+            if (Player* player = owner->ToPlayer())
+                BeginEmergence(player);
+    }
+
+    void BeginEmergence(Player* owner)
+    {
+        if (_emerging)
+            return;
+
         _emerging = true;
         me->SetControlled(true, UNIT_STATE_ROOT);
         DoCastSelf(SPELL_DK_GHOUL_BIRTH);
@@ -293,7 +313,7 @@ struct npc_pet_dk_ghoul : public CombatAI
         });
 
         // Remember the owner's target so we can attack it after emerging.
-        if (Unit* victim = summoner->ToPlayer()->GetVictim())
+        if (Unit* victim = owner->GetVictim())
             _summonTargetGUID = victim->GetGUID();
     }
 
