@@ -55,7 +55,7 @@ enum DeathKnightSpells
 
 // Birth has a two-second cast before the client plays its spawn animation.
 static constexpr auto GhoulEmergeTime = 5500ms;
-static constexpr auto GuardianGhoulEmergeTime = 3500ms;
+static constexpr auto RisenGhoulEmergeTime = 5s;
 
 struct npc_pet_dk_ebon_gargoyle : ScriptedAI
 {
@@ -308,10 +308,10 @@ struct npc_pet_dk_ghoul : public CombatAI
         if (guardian)
             me->SetReactState(REACT_PASSIVE);
         me->SetControlled(true, UNIT_STATE_ROOT);
-        DoCastSelf(SPELL_DK_GHOUL_BIRTH, guardian);
+        // Risen Ghouls use the Northrend model's emerge animation.
+        me->HandleEmoteCommand(EMOTE_ONESHOT_EMERGE);
 
-        scheduler.Schedule(guardian ? GuardianGhoulEmergeTime : GhoulEmergeTime,
-            [this, guardian](TaskContext /*context*/)
+        scheduler.Schedule(RisenGhoulEmergeTime, [this, guardian](TaskContext /*context*/)
         {
             me->SetControlled(false, UNIT_STATE_ROOT);
             if (guardian)
