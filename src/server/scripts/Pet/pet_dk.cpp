@@ -44,6 +44,7 @@ enum DeathKnightSpells
     SPELL_DK_SANCTUARY              = 54661,
     SPELL_DK_NIGHT_OF_THE_DEAD      = 62137,
     SPELL_DK_PET_SCALING            = 61017,
+    SPELL_DK_ARMY_GHOUL_SPAWN       = 63107,
     // Risen Ally
     SPELL_DK_RAISE_ALLY             = 46619,
     SPELL_GHOUL_FRENZY              = 62218,
@@ -335,11 +336,29 @@ struct npc_pet_dk_army_of_the_dead : public AggressorAI
 {
     npc_pet_dk_army_of_the_dead(Creature* creature) : AggressorAI(creature) { }
 
+    void IsSummonedBy(WorldObject* /*summoner*/) override
+    {
+        _emerging = true;
+        me->SetReactState(REACT_PASSIVE);
+        DoCastSelf(SPELL_DK_ARMY_GHOUL_SPAWN, true);
+
+        scheduler.Schedule(2s, [this](TaskContext /*context*/)
+        {
+            _emerging = false;
+            me->SetReactState(REACT_AGGRESSIVE);
+
+            if (Unit* owner = me->GetOwner())
+                if (Unit* target = owner->GetVictim())
+                    if (me->IsValidAttackTarget(target))
+                        AttackStart(target);
+        });
+    }
+
     // Restrict MoveInLineOfSight aggro to targets already fighting our owner,
     // so ghouls don't pull extra packs on their own.
     bool CanAIAttack(Unit const* target) const override
     {
-        if (!target)
+        if (_emerging || !target)
             return false;
         Unit* owner = me->GetOwner();
         if (owner && !target->IsInCombatWith(owner))
@@ -352,7 +371,7 @@ struct npc_pet_dk_army_of_the_dead : public AggressorAI
     // may reject the target before combat refs are established.
     void OwnerAttacked(Unit* target) override
     {
-        if (!target || !me->IsAlive() || me->HasReactState(REACT_PASSIVE))
+        if (_emerging || !target || !me->IsAlive() || me->HasReactState(REACT_PASSIVE))
             return;
         if (me->IsValidAttackTarget(target))
             AttackStart(target);
@@ -361,14 +380,19 @@ struct npc_pet_dk_army_of_the_dead : public AggressorAI
     // Owner was attacked — help defend.
     void OwnerAttackedBy(Unit* attacker) override
     {
-        if (!attacker || !me->IsAlive() || me->HasReactState(REACT_PASSIVE))
+        if (_emerging || !attacker || !me->IsAlive() || me->HasReactState(REACT_PASSIVE))
             return;
         if (me->IsValidAttackTarget(attacker))
             AttackStart(attacker);
     }
 
-    void UpdateAI(uint32 /*diff*/) override
+    void UpdateAI(uint32 diff) override
     {
+        scheduler.Update(diff);
+
+        if (_emerging)
+            return;
+
         if (!UpdateVictim())
         {
             // Re-engage if we still have a valid victim but lost engagement
@@ -386,6 +410,9 @@ struct npc_pet_dk_army_of_the_dead : public AggressorAI
 
         DoMeleeAttackIfReady();
     }
+
+private:
+    bool _emerging = false;
 };
 
 struct npc_pet_dk_dancing_rune_weapon : public NullCreatureAI
