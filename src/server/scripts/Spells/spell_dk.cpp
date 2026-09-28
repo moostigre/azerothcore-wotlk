@@ -2204,6 +2204,31 @@ private:
     bool _corpse;
 };
 
+// 46585, 52150 - Raise Dead summon
+class spell_dk_raise_dead_summon : public SpellScript
+{
+    PrepareSpellScript(spell_dk_raise_dead_summon);
+
+    void SetSpawnDestination(SpellDestination& dest)
+    {
+        WorldLocation const* originalDest = GetExplTargetDest();
+        if (!originalDest || !GetCaster()->IsWithinDist2d(originalDest, 0.1f))
+            return;
+
+        float x, y, z;
+        if (!GetCaster()->GetClosePoint(x, y, z, GetCaster()->GetObjectSize()))
+            return;
+
+        dest.Relocate(Position(x, y, z, GetCaster()->GetOrientation()));
+    }
+
+    void Register() override
+    {
+        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(
+            spell_dk_raise_dead_summon::SetSpawnDestination, EFFECT_0, TARGET_DEST_DEST_RANDOM);
+    }
+};
+
 // 59754 - Rune Tap
 class spell_dk_rune_tap_party : public SpellScript
 {
@@ -3050,6 +3075,7 @@ void AddSC_deathknight_spell_scripts()
     RegisterSpellScript(spell_dk_pestilence);
     RegisterSpellScript(spell_dk_presence);
     RegisterSpellScript(spell_dk_raise_dead);
+    RegisterSpellScript(spell_dk_raise_dead_summon);
     RegisterSpellScript(spell_dk_rune_tap_party);
     RegisterSpellScript(spell_dk_scent_of_blood);
     RegisterSpellScript(spell_dk_scourge_strike);
