@@ -44,7 +44,7 @@ enum DeathKnightSpells
     SPELL_DK_SANCTUARY              = 54661,
     SPELL_DK_NIGHT_OF_THE_DEAD      = 62137,
     SPELL_DK_PET_SCALING            = 61017,
-    SPELL_DK_ARMY_GHOUL_SPAWN       = 63107,
+    SPELL_DK_ARMY_GHOUL_BIRTH       = 7398,
     // Risen Ally
     SPELL_DK_RAISE_ALLY             = 46619,
     SPELL_GHOUL_FRENZY              = 62218,
@@ -340,9 +340,9 @@ struct npc_pet_dk_army_of_the_dead : public AggressorAI
     {
         _emerging = true;
         me->SetReactState(REACT_PASSIVE);
-        DoCastSelf(SPELL_DK_ARMY_GHOUL_SPAWN, true);
+        DoCastSelf(SPELL_DK_ARMY_GHOUL_BIRTH);
 
-        scheduler.Schedule(2s, [this](TaskContext /*context*/)
+        scheduler.Schedule(2500ms, [this](TaskContext /*context*/)
         {
             _emerging = false;
             me->SetReactState(REACT_AGGRESSIVE);
