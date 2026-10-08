@@ -21,6 +21,7 @@
 #include "CreatureGroups.h"
 #include "MoveSpline.h"
 #include "MoveSplineInit.h"
+#include "MotionMaster.h"
 
 FormationMovementGenerator::FormationMovementGenerator(Unit* leader, float range, float angle, uint32 point1, uint32 point2)
     : AbstractFollower(leader), _range(range), _angle(angle), _point1(point1), _point2(point2), _lastLeaderSplineID(0),
@@ -58,6 +59,25 @@ bool FormationMovementGenerator::DoUpdate(Creature* owner, uint32 diff)
     if (owner->HasUnitState(UNIT_STATE_NOT_MOVE) || owner->IsMovementPreventedByCasting())
     {
         owner->StopMoving();
+        _nextMoveTimer.Reset(0);
+        _hasPredictedDestination = false;
+        _isMoving = false;
+        return true;
+    }
+
+    // Do not treat forced movement, such as pulls and knockbacks, as formation movement.
+    if (target->GetMotionMaster()->GetCurrentMovementGeneratorType() == EFFECT_MOTION_TYPE)
+    {
+        if (!owner->movespline->Finalized())
+            owner->StopMoving();
+
+        if (!owner->IsEngaged())
+            if (Unit* victim = target->GetVictim())
+                if (owner->IsValidAttackTarget(victim))
+                    owner->EngageWithTarget(victim);
+
+        _lastLeaderSplineID = target->movespline->GetId();
+        _lastLeaderPosition.Relocate(target->GetPosition());
         _nextMoveTimer.Reset(0);
         _hasPredictedDestination = false;
         _isMoving = false;
