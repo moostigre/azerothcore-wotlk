@@ -124,6 +124,19 @@ mmapsConfig:
     # All parameters defined globally are eligible for override.
     # Just specify the parameter name and new value in the override section.
     mapsOverrides:
+      "33": # Shadowfang Keep
+        # Exclude the walkable railing beside the lower flight of Arugal's platform stairs.
+        # Coordinates measured from Ld_Shadowfanginterior.wmo, group 1396, in client data v20.
+        # Preserve the lower floor and stair treads, without changing the tile's step height.
+        navmeshExclusions:
+          - minHeight: 146.25
+            maxHeight: 150.0
+            vertices:
+              - [-83.80, 2143.08]
+              - [-87.20, 2144.42]
+              - [-86.75, 2145.56]
+              - [-83.35, 2144.22]
+
       "48": # Blackfathom Deeps
         cellSizeVertical: 0.5334 # ch*2 = 0.2667 * 2 ≈ 0.5334. Reduce the chance to have underground levels.
 
@@ -138,6 +151,12 @@ mmapsConfig:
         tilesOverrides:
           "32,30": # Dark portal
             walkableSlopeAngle: 45 # https://github.com/chromiecraft/chromiecraft/issues/8404#issuecomment-3476012660
+
+    # Map-level navmeshExclusions remove surfaces within height-bounded convex polygons.
+    # vertices contains ordered [world X, world Y] pairs; minHeight/maxHeight are world Z.
+    # These volumes are applied before erosion, so walkableRadius supplies clearance around them.
+    # Tiles intersecting an exclusion are always rebuilt. If an exclusion is removed or moved to
+    # another tile, delete the previously affected .mmtile file to rebuild its original surfaces.
 
   # debugOutput generates debug files in the `meshes` directory for use with RecastDemo.
   # This is useful for inspecting and debugging mmap generation visually.

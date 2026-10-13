@@ -16,13 +16,25 @@
  */
 
 #include "Config.h"
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
+#include <limits>
 #include <fkYAML/node.hpp>
 #include "PathCommon.h"
 #include "TerrainBuilder.h"
 
 namespace MMAP
 {
+    bool NavmeshExclusion::Overlaps(float const* bmin, float const* bmax) const
+    {
+        for (std::size_t axis = 0; axis < minBounds.size(); ++axis)
+            if (maxBounds[axis] < bmin[axis] || minBounds[axis] > bmax[axis])
+                return false;
+
+        return true;
+    }
+
     float ComputeBaseUnitDim(int vertexPerMapEdge)
     {
         return GRID_SIZE / static_cast<float>(vertexPerMapEdge);
@@ -152,6 +164,9 @@ namespace MMAP
         if (mapOverride && mapOverride->cellSizeVertical.has_value())
             config.cellSizeVertical = *mapOverride->cellSizeVertical;
 
+        if (mapOverride)
+            config.navmeshExclusions = mapOverride->navmeshExclusions;
+
         return config;
     }
 
@@ -225,6 +240,86 @@ namespace MMAP
 
                 MapOverride override;
                 fkyaml::node mapNode = mapEntry.second;
+
+                if (mapNode.contains("navmeshExclusions"))
+                {
+                    auto const& exclusions = mapNode["navmeshExclusions"];
+                    if (!exclusions.is_sequence())
+                        return false;
+
+                    for (auto const& exclusionNode : exclusions.as_seq())
+                    {
+                        if (!exclusionNode.is_mapping() || !exclusionNode.contains("minHeight") ||
+                            !exclusionNode.contains("maxHeight") ||
+                            !exclusionNode.contains("vertices") || !exclusionNode["vertices"].is_sequence())
+                            return false;
+
+                        auto isNumber = [](fkyaml::node const& node)
+                        {
+                            return node.is_integer() || node.is_float_number();
+                        };
+                        if (!isNumber(exclusionNode["minHeight"]) || !isNumber(exclusionNode["maxHeight"]))
+                            return false;
+
+                        float minHeight = exclusionNode["minHeight"].get_value<float>();
+                        float maxHeight = exclusionNode["maxHeight"].get_value<float>();
+                        auto const& points = exclusionNode["vertices"].as_seq();
+                        if (!std::isfinite(minHeight) || !std::isfinite(maxHeight) || minHeight >= maxHeight ||
+                            points.size() < 3)
+                            return false;
+
+                        NavmeshExclusion exclusion;
+                        float limit = std::numeric_limits<float>::max();
+                        exclusion.minBounds = {limit, minHeight, limit};
+                        exclusion.maxBounds = {-limit, maxHeight, -limit};
+
+                        for (auto const& point : points)
+                        {
+                            if (!point.is_sequence() || point.size() != 2 || !isNumber(point[0]) || !isNumber(point[1]))
+                                return false;
+
+                            float worldX = point[0].get_value<float>();
+                            float worldY = point[1].get_value<float>();
+                            if (!std::isfinite(worldX) || !std::isfinite(worldY))
+                                return false;
+
+                            exclusion.vertices.insert(exclusion.vertices.end(), {worldY, 0.0f, worldX});
+                            exclusion.minBounds[0] = std::min(exclusion.minBounds[0], worldY);
+                            exclusion.minBounds[2] = std::min(exclusion.minBounds[2], worldX);
+                            exclusion.maxBounds[0] = std::max(exclusion.maxBounds[0], worldY);
+                            exclusion.maxBounds[2] = std::max(exclusion.maxBounds[2], worldX);
+                        }
+
+                        // Every other vertex must be on the same side of each edge: convex, ordered polygon.
+                        float winding = 0.0f;
+                        for (std::size_t i = 0; i < points.size(); ++i)
+                        {
+                            std::size_t next = (i + 1) % points.size();
+                            float dx = exclusion.vertices[next * 3] - exclusion.vertices[i * 3];
+                            float dz = exclusion.vertices[next * 3 + 2] - exclusion.vertices[i * 3 + 2];
+                            if (dx == 0.0f && dz == 0.0f)
+                                return false;
+
+                            for (std::size_t j = 0; j < points.size(); ++j)
+                            {
+                                float cross = dx * (exclusion.vertices[j * 3 + 2] - exclusion.vertices[i * 3 + 2]) -
+                                    dz * (exclusion.vertices[j * 3] - exclusion.vertices[i * 3]);
+                                if (cross == 0.0f)
+                                    continue;
+
+                                if (winding != 0.0f && (cross > 0.0f) != (winding > 0.0f))
+                                    return false;
+
+                                winding = cross;
+                            }
+                        }
+
+                        if (winding == 0.0f)
+                            return false;
+
+                        override.navmeshExclusions.push_back(std::move(exclusion));
+                    }
+                }
 
                 if (mapNode.contains("walkableSlopeAngle"))
                     override.walkableSlopeAngle = mapNode["walkableSlopeAngle"].get_value<float>();

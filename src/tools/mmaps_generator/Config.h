@@ -18,11 +18,13 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 #include <boost/program_options/options_description.hpp>
 #include "Define.h"
 #include "MapDefines.h"
@@ -41,6 +43,16 @@ namespace std
 
 namespace MMAP
 {
+    struct NavmeshExclusion
+    {
+        // Recast coordinates: (world Y, world Z, world X).
+        std::vector<float> vertices;
+        std::array<float, 3> minBounds;
+        std::array<float, 3> maxBounds;
+
+        bool Overlaps(float const* bmin, float const* bmax) const;
+    };
+
     struct ResolvedMeshConfig {
         float walkableSlopeAngle;
         int walkableRadius;
@@ -53,6 +65,7 @@ namespace MMAP
         float cellSizeHorizontal;
         float cellSizeVertical;
         float maxSimplificationError;
+        std::vector<NavmeshExclusion> navmeshExclusions;
 
         MmapTileRecastConfig toMMAPTileRecastConfig() const;
     };
@@ -91,6 +104,7 @@ namespace MMAP
         };
 
         struct MapOverride {
+            std::vector<NavmeshExclusion> navmeshExclusions;
             std::optional<float> walkableSlopeAngle;
             std::optional<int> walkableRadius;
             std::optional<int> walkableHeight;

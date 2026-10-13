@@ -676,6 +676,13 @@ namespace MMAP
                     continue;
                 }
 
+                // Remove local shortcuts before erosion so clearance also respects the excluded surface.
+                for (NavmeshExclusion const& exclusion : cfg.navmeshExclusions)
+                    if (exclusion.Overlaps(tileCfg.bmin, tileCfg.bmax))
+                        rcMarkConvexPolyArea(m_rcContext, exclusion.vertices.data(),
+                            static_cast<int>(exclusion.vertices.size() / 3), exclusion.minBounds[1],
+                            exclusion.maxBounds[1], RC_NULL_AREA, *tile.chf);
+
                 // build polymesh intermediates
                 if (!rcErodeWalkableArea(m_rcContext, config.walkableRadius, *tile.chf))
                 {
@@ -1032,6 +1039,16 @@ namespace MMAP
     /**************************************************************************/
     bool TileBuilder::shouldSkipTile(uint32 mapID, uint32 tileX, uint32 tileY) const
     {
+        auto const cfg = m_mapBuilder->getConfig().GetConfigForTile(mapID, tileX, tileY);
+        float bmin[3], bmax[3];
+        m_mapBuilder->getTileBounds(tileX, tileY, nullptr, 0, bmin, bmax);
+        bmin[1] = -FLT_MAX;
+
+        // Exclusion coordinates are not stored in the tile header. Rebuild intersecting tiles on every run.
+        for (NavmeshExclusion const& exclusion : cfg.navmeshExclusions)
+            if (exclusion.Overlaps(bmin, bmax))
+                return false;
+
         const std::string fileName = Acore::StringFormat(
             TILE_FILE_NAME_FORMAT,
             m_mapBuilder->getConfig().DataDirPath(),
@@ -1054,7 +1071,7 @@ namespace MMAP
         if (header.mmapVersion != MMAP_VERSION)
             return false;
 
-        const auto desiredRecastConfig = m_mapBuilder->getConfig().GetConfigForTile(mapID, tileX, tileY).toMMAPTileRecastConfig();
+        auto const desiredRecastConfig = cfg.toMMAPTileRecastConfig();
         return header.recastConfig == desiredRecastConfig;
     }
 
